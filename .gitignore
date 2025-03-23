@@ -4,6 +4,8 @@ cmake-build-*/
 CMakeCache.txt
 CMakeFiles/
 *.cmake
+!pico_extras_import.cmake
+!pico_sdk_import.cmake
 Makefile
 *.cbp
 *.cmakein
