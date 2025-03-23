@@ -6,12 +6,14 @@
 class ChocSineModule : public AudioModule {
 public:
     // frequency in Hz, sampleRate in Hz, and volume (0.0 to 1.0)
-    ChocSineModule(double frequency, double sampleRate, double vol)
+    ChocSineModule(double frequency, double frequency2, double sampleRate, double vol)
       : volume(vol)
     {
         // Set up our oscillator
-        osc.resetPhase();
-        osc.setFrequency(frequency, sampleRate);
+        osc1.resetPhase();
+        osc1.setFrequency(frequency, sampleRate);
+        osc2.resetPhase();
+        osc2.setFrequency(frequency2, sampleRate);
     }
 
     // process() is called with a CHOC interleaved float view.
@@ -21,14 +23,17 @@ public:
         auto size = output.getSize();
         for (uint32_t f = 0; f < size.numFrames; ++f) {
             // Get a new sample from our oscillator.
-            float sample = static_cast<float>(osc.getSample()) * static_cast<float>(volume);
+            float sample1 = static_cast<float>(osc1.getSample()) * static_cast<float>(volume);
             // Write to channel 0.
-            output.getSample(0, f) += sample;
-            // Optionally, for stereo, you might use a different oscillator for channel 1.
+            output.getSample(0, f) += sample1;
+            float sample2 = static_cast<float>(osc2.getSample()) * static_cast<float>(volume);
+            output.getSample(1, f) += sample2;
         }
     }
 
 private:
-    choc::oscillator::Sine<double> osc;  // CHOC sine oscillator (using double precision)
+    choc::oscillator::Sine<double> osc1;  // CHOC sine oscillator (using double precision)
+    choc::oscillator::Sine<double> osc2;  // CHOC sine oscillator (using double precision)
+
     double volume;
 };

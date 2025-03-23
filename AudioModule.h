@@ -4,6 +4,7 @@
 
 #ifndef AUDIOMODULE_H
 #define AUDIOMODULE_H
+#include "choc/audio/choc_SampleBuffers.h"
 //==============================================================================
 // Abstract base class for audio modules.
 // Your modules will work entirely with CHOC interleaved float buffers.
