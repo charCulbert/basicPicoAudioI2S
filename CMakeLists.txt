@@ -28,10 +28,17 @@ endif()
 
 # only build I2S example if library is available
     add_executable(sine_wave_i2s
-            sine_wave.c
-            sine_wrapper.cpp
+            main.cpp
+            chocSineModule.cpp
+            chocSineModule.h
+            AudioModule.h
+            AudioEngine.cpp
+            AudioEngine.h
     )
 
+    target_include_directories(sine_wave_i2s PRIVATE
+    include
+    )
     target_link_libraries(sine_wave_i2s PRIVATE
             pico_stdlib
             pico_audio_i2s
