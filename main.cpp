@@ -16,7 +16,7 @@ int main() {
     AudioEngine engine(channels, frames);
 
     // Add modules to the callback
-    ChocSineModule sineModule(200.0, 300.0, 22050.0, 0.2); // 440 Hz, 44.1 kHz sample rate, 50% volume
+    ChocSineModule sineModule(128.0, 192.0, 22050.0, 0.1); // 440 Hz, 44.1 kHz sample rate, 50% volume
     engine.addModule(&sineModule);
 
     engine.start();
