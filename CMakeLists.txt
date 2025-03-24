@@ -34,6 +34,8 @@ endif()
             AudioModule.h
             AudioEngine.cpp
             AudioEngine.h
+            freqModSineModule.cpp
+            freqModSineModule.h
     )
 
     target_include_directories(sine_wave_i2s PRIVATE
