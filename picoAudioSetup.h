@@ -1,7 +1,7 @@
 #pragma once
 #include "pico/audio_i2s.h"
 
-#define SAMPLES_PER_BUFFER 512
+#define SAMPLES_PER_BUFFER 128
 
 // Initialize I2S for 16-bit stereo at 44.1 kHz and return the audio buffer pool.
 inline struct audio_buffer_pool* init_audio() {

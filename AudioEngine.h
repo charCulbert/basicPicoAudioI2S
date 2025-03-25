@@ -7,6 +7,9 @@
 #include "choc/audio/choc_SampleBuffers.h"
 #include "AudioModule.h"  // Abstract base class for modules
 
+
+
+
 /**
  * AudioEngine wraps the I2S processing loop and CHOC buffer mixing.
  * It creates the I2S pool (via init_audio()) and a scratch float buffer,
@@ -44,6 +47,7 @@ private:
     void processNextBlock(int16_t* output, uint32_t frames) {
         // Clear the CHOC float buffer.
         choc::buffer::setAllFrames(floatView, [](){ return 0.0f; });
+
         // Process all modules.
         for (auto module : modules)
             module->process(floatView);

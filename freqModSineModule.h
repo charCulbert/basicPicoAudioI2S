@@ -4,41 +4,93 @@
 #include "choc/audio/choc_Oscillators.h"
 #include "choc/audio/choc_SampleBuffers.h"
 #include "AudioModule.h"
+#include "pico/multicore.h"
+
+enum Command {
+    CMD_VOL_DOWN = 1,
+    CMD_VOL_UP = 2,
+    CMD_MOD_DOWN = 3,
+    CMD_MOD_UP = 4,
+    CMD_HARM_DOWN = 5,
+    CMD_HARM_UP = 6
+};
+
 
 class FreqModSineModule : public AudioModule {
 public:
-    // frequency in Hz, sampleRate in Hz, and volume (0.0 to 1.0)
     FreqModSineModule(double frequency, double harmonicityRatio, double modulationIndex, double sampleRate, double vol)
-      : baseFrequency(frequency),
-        modulationIndex(modulationIndex),
-        sampleRate(sampleRate),
-        volume(vol),
-        harmonicityRatio(harmonicityRatio)
+        : baseFrequency(frequency),
+          modulationIndex(modulationIndex),
+          sampleRate(sampleRate),
+          volume(vol),
+          harmonicityRatio(harmonicityRatio),
+          currentFreq(frequency)  // initialize currentFreq
     {
-        osc1.resetPhase();
-        osc1.setFrequency(baseFrequency, sampleRate);
-        osc2.resetPhase();
-        osc2.setFrequency(baseFrequency * harmonicityRatio, sampleRate);
+        osc.resetPhase();
+        osc.setFrequency(baseFrequency * harmonicityRatio, sampleRate);
     }
 
     // Process() renders the modulated sine wave to both channels.
     void process(choc::buffer::InterleavedView<float> output) override {
-        auto size = output.getSize();
-        for (uint32_t f = 0; f < size.numFrames; ++f) {
-            // Get modulator sample WITHOUT scaling by volume.
-            float modulator = static_cast<float>(osc2.getSample());
-            // Calculate the instantaneous frequency of the carrier.
-            resultingFreq = baseFrequency + modulator * modulationIndex;
-            osc1.setFrequency(resultingFreq, sampleRate);
+        // Temporary FIFO clearing loop for testing.
 
-            // Get carrier sample and scale by overall volume.
-            float sample1 = static_cast<float>(osc1.getSample()) * static_cast<float>(volume);
-
-            // Write to both channels.
-            output.getSample(0, f) += sample1;
-            output.getSample(1, f) += sample1;
+        while (multicore_fifo_rvalid()) {
+            int CMD = multicore_fifo_pop_blocking();
+            if (CMD == CMD_VOL_DOWN) {
+                if (volume >= 0.01f) {
+                    volume -= 0.01f;
+                    setVolume(volume);
+                }
+            }
+            else if (CMD == CMD_VOL_UP) {
+                if (volume <= 0.5f) {
+                    volume += 0.01f;
+                    setVolume(volume);
+                }
+            }
+            else if (CMD == CMD_MOD_DOWN) {
+                if (modulationIndex > 1.0f) {
+                    modulationIndex -= 0.1f;
+                    setModulationIndex(modulationIndex);
+                }
+            }
+            else if (CMD == CMD_MOD_UP) {
+                modulationIndex += 0.1f;
+                setModulationIndex(modulationIndex);
+            }
+            else if (CMD == CMD_HARM_DOWN) {
+                if (harmonicityRatio > 1.0f) {
+                    harmonicityRatio -= 0.1f;
+                    setHarmonicityRatio(harmonicityRatio);
+                }
+            }
+            else if (CMD == CMD_HARM_UP) {
+                harmonicityRatio += 0.1f;
+                setHarmonicityRatio(harmonicityRatio);
+            }
         }
-    }
+
+            auto size = output.getSize();
+            const double twoPi = 6.283185307179586;
+            double phaseInc = twoPi * baseFrequency / sampleRate;
+            for (uint32_t f = 0; f < size.numFrames; ++f) {
+                // Get the modulator value (from osc, which handles its own phase)
+                double mod = osc.getSample();  // output between -1 and 1
+
+                // Compute FM synthesis output directly.
+                double out = sin(carrierPhase + modulationIndex * mod);
+
+                // Increment the carrier phase manually
+                carrierPhase += phaseInc;
+                if (carrierPhase >= twoPi)
+                    carrierPhase -= twoPi;
+
+                // Write the sample (scaled by volume) to both channels.
+                float sample1 = static_cast<float>(out * volume);
+                output.getSample(0, f) += sample1;
+                output.getSample(1, f) += sample1;
+            }
+        }
 
     // Setter methods to adjust parameters via serial.
     void setModulationIndex(double newIndex) {
@@ -47,13 +99,12 @@ public:
 
     void setHarmonicityRatio(double newRatio) {
         harmonicityRatio = newRatio;
-        osc2.setFrequency(baseFrequency * harmonicityRatio, sampleRate);
+        osc.setFrequency(baseFrequency * harmonicityRatio, sampleRate);
     }
 
     void setBaseFrequency(double newFreq) {
         baseFrequency = newFreq;
-        osc1.setFrequency(baseFrequency, sampleRate);
-        osc2.setFrequency(baseFrequency * harmonicityRatio, sampleRate);
+        osc.setFrequency(baseFrequency * harmonicityRatio, sampleRate);
     }
 
     // In FreqModSineModule.h, inside the class public section:
@@ -62,15 +113,18 @@ public:
     }
 
 private:
-    choc::oscillator::Sine<double> osc1;  // Carrier oscillator.
-    choc::oscillator::Sine<double> osc2;  // Modulator oscillator.
 
+    choc::oscillator::Sine<double> osc;  // Modulator oscillator.
+    double currentFreq;  // Initialize this to baseFrequency in the constructor
     double volume;
     double modulationIndex;
     double baseFrequency;
     double sampleRate;
     double harmonicityRatio;
     double resultingFreq;
+    const double twoPi = 6.283185307179586;
+    double carrierPhase = 0.0;
+    double modulatorPhase = 0.0;
 };
 
 #endif // FREQMODSINEMODULE_H
