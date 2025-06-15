@@ -2,6 +2,7 @@
 # Minimum required CMake version
 # -----------------------------------------------------------------------------
 cmake_minimum_required(VERSION 3.12)
+set(PICO_BOARD pico2)
 
 # -----------------------------------------------------------------------------
 # Set environment variables for the Pico SDK and Pico Extras.
