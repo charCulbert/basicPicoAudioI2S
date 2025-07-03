@@ -58,14 +58,15 @@ endif()
 # -----------------------------------------------------------------------------
 add_executable(basicPicoAudio
         main.cpp
-        picoAudoSetup_pwm.h
 )
 
 # -----------------------------------------------------------------------------
 # Specify include directories for the target
 # -----------------------------------------------------------------------------
 target_include_directories(basicPicoAudio PRIVATE
-choc
+        ${CMAKE_CURRENT_SOURCE_DIR}
+
+        choc
 
 )
 
@@ -78,6 +79,8 @@ target_link_libraries(basicPicoAudio PRIVATE
         pico_audio_i2s
         hardware_dma
         hardware_pwm
+        tinyusb_device    # <-- THIS WAS THE MISSING PIECE
+
 )
 
 # -----------------------------------------------------------------------------
@@ -93,15 +96,10 @@ target_compile_definitions(basicPicoAudio PRIVATE
         USE_AUDIO_I2S=1
         PICO_AUDIO_I2S_DATA_PIN=10
         PICO_AUDIO_I2S_CLOCK_PIN_BASE=11
-        # Optional:
-        # PICO_AUDIO_I2S_MONO_INPUT=1
-        # PICO_AUDIO_I2S_MONO_OUTPUT=1
-        # PICO_DEFAULT_UART=0
-        # PICO_DEFAULT_UART_TX_PIN=28
-        # PICO_DEFAULT_UART_RX_PIN=29
+
 )
 
-# -----------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Enable USB serial and UART for debugging
 # -----------------------------------------------------------------------------
 pico_enable_stdio_usb(basicPicoAudio 1)
