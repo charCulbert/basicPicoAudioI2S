@@ -1,39 +1,65 @@
 #include <cstdint>
-#include <sys/unistd.h>
-#include <cstdio>
-
+#include <vector>
+#include <string>
+#include <cmath>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 
+// --- Include our new listener and the audio engine files ---
+#include "MidiSerialListener.h"
 #include "AudioEngine.h"
-#include "ControlDefinitions.h" // <-- Include our new single source of truth
 #include "picoAudoSetup_pwm.h"
 #include "freqModSineModule.h"
 #include "VCAEnvelopeModule.h"
 
+// Helper to convert MIDI note number to frequency (still needed by Core 1)
+static inline float midi_note_to_freq(uint8_t note) {
+    return 440.0f * powf(2.0f, (note - 69.0f) / 12.0f);
+}
+
 //==============================================================================
-// The ControlModule is now incredibly simple.
-// It just executes the functions from the master list.
+// Core 1 Audio Processing remains here as it's launched by main()
 //==============================================================================
-class ControlModule : public AudioModule {
+class MidiControlModule : public AudioModule {
 public:
-    ControlModule(FreqModSineModule* osc, VCAEnvelopeModule* env)
+    MidiControlModule(FreqModSineModule* osc, VCAEnvelopeModule* env)
       : oscillator(osc), envelope(env) {}
 
     void process(choc::buffer::InterleavedView<float> /*buffer*/) override {
+        // This logic is unchanged.
         while (multicore_fifo_rvalid()) {
-            uint32_t cmd = multicore_fifo_pop_blocking();
+            uint32_t packet = multicore_fifo_pop_blocking();
+            uint8_t command = (packet >> 24) & 0xFF;
+            uint8_t data1   = (packet >> 16) & 0xFF;
+            uint8_t data2   = (packet >> 8)  & 0xFF;
 
-            // Decode the command ID to find the action in our master list.
-            size_t definition_index = cmd / 2; // Each definition has two commands (down/up)
-            bool is_up_command = (cmd % 2 != 0);
-
-            if (definition_index < g_controlDefinitions.size()) {
-                const auto& def = g_controlDefinitions[definition_index];
-                if (is_up_command) {
-                    def.action_up(oscillator, envelope);
-                } else {
-                    def.action_down(oscillator, envelope);
+            switch (command) {
+                case 0x90: { // NOTE_ON
+                    lastVelocityVolume = data2 / 127.0f;
+                    oscillator->setBaseFrequency(midi_note_to_freq(data1));
+                    oscillator->setVolume(masterVolume * lastVelocityVolume);
+                    envelope->noteOn();
+                    break;
+                }
+                case 0x80: { // NOTE_OFF
+                    envelope->noteOff();
+                    break;
+                }
+                case 0xB0: { // CONTROL_CHANGE
+                    float value_norm = data2 / 127.0f;
+                    switch (data1) {
+                        case 1:  oscillator->setModulationIndex(value_norm * 10.0f); break;
+                        case 10: oscillator->setHarmonicityRatio(0.5f + (value_norm * 3.5f)); break;
+                        case 74: envelope->setAttackTime(0.001f + (value_norm * 2.0f)); break;
+                        case 71: envelope->setDecayTime(0.001f + (value_norm * 3.0f)); break;
+                        case 72: envelope->setReleaseTime(0.01f + (value_norm * 5.0f)); break;
+                        case 73: envelope->setSustainLevel(value_norm); break;
+                        case 75:
+                            masterVolume = value_norm;
+                            oscillator->setVolume(masterVolume * lastVelocityVolume);
+                            break;
+                    }
+                    break;
                 }
             }
         }
@@ -41,66 +67,40 @@ public:
 private:
     FreqModSineModule* oscillator;
     VCAEnvelopeModule* envelope;
+    float masterVolume = 1.0f;
+    float lastVelocityVolume = 1.0f;
 };
 
-//==============================================================================
-// Core 1 (No changes needed)
-//==============================================================================
 void main_core1() {
-    printf("Audio core (core 1) running with fully automated controls.\n");
     AudioEngine engine(PwmAudioOutput::NUM_CHANNELS, PwmAudioOutput::BUFFER_SIZE);
-    FreqModSineModule oscillator(128.0, 2.5, 5.0, PwmAudioOutput::SAMPLE_RATE, 1.0);
+    FreqModSineModule oscillator(440.0, 1.0, 0.0, PwmAudioOutput::SAMPLE_RATE, 1.0);
     VCAEnvelopeModule envelope(PwmAudioOutput::SAMPLE_RATE);
-    envelope.setAttackTime(0.05); envelope.setDecayTime(0.3);
-    envelope.setSustainLevel(0.7); envelope.setReleaseTime(1.2);
-    ControlModule control(&oscillator, &envelope);
-    engine.addModule(&control); engine.addModule(&oscillator); engine.addModule(&envelope);
-    printf("Signal Path: Control -> Oscillator -> VCA Envelope -> Hardware\n");
-    envelope.noteOn();
+    MidiControlModule midiControl(&oscillator, &envelope);
+    engine.addModule(&midiControl);
+    engine.addModule(&oscillator);
+    engine.addModule(&envelope);
     PwmAudioOutput audioOutput(engine);
-    printf("Starting PWM audio output...\n");
     audioOutput.start();
 }
 
+
 //==============================================================================
-// Core 0: The main control core.
+// The beautifully clean main() function
 //==============================================================================
 int main() {
     stdio_init_all();
-    sleep_ms(2500);
+    sleep_ms(2000);
+    printf("\n--- Pico Modular Synth (Refactored) ---\n");
 
-    printf("--- Pico Modular Synth --- \n");
-    printf("Controls (Down/Up):\n");
-    // Generate help text automatically from the master list.
-    for (const auto& def : g_controlDefinitions) {
-        printf("  %c/%c  -> %s\n", def.key_down, def.key_up, def.label);
-    }
-
+    // Launch the audio engine on the second core.
     multicore_launch_core1(main_core1);
 
-    while (true) {
-        int c = getchar_timeout_us(0);
-        if (c >= 0) {
-            // Find which command to send by looping through the master list.
-            for (size_t i = 0; i < g_controlDefinitions.size(); ++i) {
-                const auto& def = g_controlDefinitions[i];
-                uint32_t command_to_send = 0;
+    // Create an instance of our new listener class.
+    MidiSerialListener listener;
 
-                if (c == def.key_down) {
-                    command_to_send = i * 2; // Down commands are even numbers (0, 2, 4...)
-                    printf("core0: -> %s Down\n", def.label); // Print the command!
-                } else if (c == def.key_up) {
-                    command_to_send = i * 2 + 1; // Up commands are odd numbers (1, 3, 5...)
-                    printf("core0: -> %s Up\n", def.label); // Print the command!
-                }
+    // Start the infinite listening loop on Core 0.
+    listener.run();
 
-                if (command_to_send != 0 || c == def.key_down) { // Handle index 0 case
-                    multicore_fifo_push_blocking(command_to_send);
-                    break; // Found it, stop searching
-                }
-            }
-        }
-        tight_loop_contents();
-    }
+    // This part is never reached, but it's good practice.
     return 0;
 }

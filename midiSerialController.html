@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pico MIDI Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root { /* Color variables */ }
+    html.dark-mode { /* Dark mode colors */ }
+    /* NOTE: The full CSS from the previous version is assumed here for brevity */
+    /* It has been slightly adjusted below for the new elements */
+    :root {
+      --bg-color: #ffffff; --fg-color: #000000; --border-color: #dddddd;
+      --accent-color: #555555; --active-color: #cccccc; --subtle-bg: #f9f9f9;
+      --font-family: 'IBM Plex Mono', monospace;
+    }
+    html.dark-mode {
+      --bg-color: #1e1e1e; --fg-color: #e0e0e0; --border-color: #333333;
+      --accent-color: #999999; --active-color: #444444; --subtle-bg: #2a2a2a;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: var(--font-family); background-color: var(--bg-color); color: var(--fg-color); margin: 0; padding: 2em; transition: background-color 0.2s, color 0.2s; }
+    .app-container { max-width: 1100px; margin: 0 auto; }
+    header, .section-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1em; margin-bottom: 2em; }
+    .section-header { margin-top: 2em; margin-bottom: 1em; }
+    h1 { margin: 0; font-size: 1.5em; font-weight: 600; }
+    h3 { font-size: 1em; font-weight: 600; margin: 0; }
+    .header-controls { display: flex; gap: 1em; }
+    button { background-color: transparent; color: var(--fg-color); border: 1px solid var(--accent-color); padding: 0.6em 1.2em; cursor: pointer; font-family: var(--font-family); font-size: 0.9em; transition: all 0.1s; }
+    button:hover { background-color: var(--fg-color); color: var(--bg-color); }
+    button:disabled { cursor: not-allowed; opacity: 0.5; }
+    button#connect.connected { background-color: var(--fg-color); color: var(--bg-color); }
+    .piano-container { position: relative; display: flex; height: 160px; width: 100%; user-select: none; -webkit-user-select: none; touch-action: none; }
+    .key { border: 1px solid var(--accent-color); border-top: none; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; font-weight: 400; font-size: 0.8em; color: var(--accent-color); }
+    .key.white { width: 100%; height: 100%; background-color: var(--bg-color); border-left: none; }
+    .key.white:first-child { border-left: 1px solid var(--accent-color); }
+    .key.white.active { background: var(--active-color); }
+    .key.black { position: absolute; width: 24px; height: 60%; background-color: var(--fg-color); z-index: 2; border: 1px solid var(--fg-color); }
+    .key.black.active { background-color: #555; border-color: #555; }
+    .octave-controls button { padding: 0.4em 0.8em; }
+    .controls-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 2em; align-items: flex-start; }
+    #knob-container { display: flex; flex-wrap: wrap; gap: 20px; min-height: 80px; }
+    .knob-wrapper { text-align: center; }
+    .knob { width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--fg-color); position: relative; cursor: ns-resize; margin: 0 auto; }
+    .knob-indicator { position: absolute; width: 1px; height: 10px; background-color: var(--fg-color); top: 5px; left: 50%; transform-origin: 50% 20px; }
+    .knob-label { margin-top: 10px; font-size: 0.8em; white-space: pre; }
+    .knob-label .cc-value { font-weight: 600; }
+    #knob-config-area { display: flex; flex-direction: column; gap: 0.5em;}
+    #knob-config-area textarea { width: 100%; height: 120px; font-family: var(--font-family); font-size: 0.9em; padding: 0.5em; border: 1px solid var(--border-color); background-color: var(--subtle-bg); color: var(--fg-color); }
+    #midi-input-select { font-family: var(--font-family); padding: 0.5em; width: 100%; background-color: var(--subtle-bg); color: var(--fg-color); border: 1px solid var(--border-color); }
+    #log { background: var(--subtle-bg); border: 1px solid var(--border-color); padding: 1em; height: 200px; overflow: auto; white-space: pre-wrap; line-height: 1.6; font-size: 0.9em; margin-top: 1em; }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+  <header>
+    <h1>Pico MIDI Console</h1>
+    <div class="header-controls">
+      <button id="theme-toggle">Toggle Theme</button>
+      <button id="connect">Connect to Pico</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="section-header">
+      <h3>External MIDI Input</h3>
+    </div>
+    <div>
+      <select id="midi-input-select" disabled><option>Connect to Pico to enable MIDI</option></select>
+      <p id="midi-status" style="font-size: 0.9em; opacity: 0.7;"></p>
+    </div>
+
+    <div class="section-header">
+      <h3 id="keyboard-title">On-Screen Keyboard</h3>
+      <div class="octave-controls">
+        <button id="octave-down">< Octave</button>
+        <button id="octave-up">Octave ></button>
+      </div>
+    </div>
+    <div class="piano-container" id="piano-container"></div>
+
+    <div class="section-header"><h3>MIDI CC Controls</h3></div>
+    <div class="controls-grid">
+      <div id="knob-container"></div>
+      <div id="knob-config-area">
+        <button id="sync-knobs" disabled>1. Sync Knobs from Pico</button>
+        <textarea id="knob-config" placeholder="Click 'Sync' to populate from Pico, or enter your own definitions (e.g., '1:Modulation')."></textarea>
+        <button id="update-knobs" disabled>2. Update Knobs on UI</button>
+      </div>
+    </div>
+
+    <div class="section-header"><h3>Serial Log</h3></div>
+    <pre id="log"></pre>
+  </main>
+</div>
+
+<script>
+  // --- Global State & Elements ---
+  let port, writer, reader, midiAccess, activeMidiInput;
+  let lineBuffer = '';
+  let isParsingKnobs = false;
+  let currentOctave = 3, isPointerDown = false, lastPlayedKeyElement = null;
+
+  const log = document.getElementById('log');
+  const connectButton = document.getElementById('connect');
+  const syncKnobsButton = document.getElementById('sync-knobs');
+  const updateKnobsButton = document.getElementById('update-knobs');
+  const knobConfigText = document.getElementById('knob-config');
+  const knobContainer = document.getElementById('knob-container');
+  const midiSelect = document.getElementById('midi-input-select');
+  const midiStatus = document.getElementById('midi-status');
+
+  // --- Core Serial Communication & Parsing ---
+  function appendToLog(text) { log.textContent += text; log.scrollTop = log.scrollHeight; }
+
+  function processIncomingLine(line) {
+    if (line.startsWith('KNOB_UPDATE_START')) {
+      isParsingKnobs = true;
+      knobConfigText.value = ''; // Clear textarea
+      appendToLog('🔄 Receiving knob configuration from Pico...\n');
+      return;
+    }
+    if (line.startsWith('KNOB_UPDATE_END')) {
+      isParsingKnobs = false;
+      appendToLog('✅ Knob definitions received. Click "Update Knobs on UI" to apply.\n');
+      return;
+    }
+    if (isParsingKnobs && line.startsWith('CC_DEF:')) {
+      const parts = line.split(':');
+      if (parts.length === 3) {
+        knobConfigText.value += `${parts[1]}:${parts[2]}\n`;
+      }
+      return;
+    }
+    appendToLog(line + '\n');
+  }
+
+  async function readLoop() {
+    const textDecoder = new TextDecoder();
+    while (port?.readable) {
+      try {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        lineBuffer += textDecoder.decode(value, { stream: true });
+        let eolIndex;
+        while ((eolIndex = lineBuffer.indexOf('\n')) >= 0) {
+          const line = lineBuffer.substring(0, eolIndex).trim();
+          lineBuffer = lineBuffer.substring(eolIndex + 1);
+          if (line) processIncomingLine(line);
+        }
+      } catch (error) { appendToLog(`Read loop error: ${error.message}\n`); break; }
+    }
+    writer.releaseLock();
+    reader.releaseLock();
+    if (port) await port.close();
+    port = writer = reader = null;
+    connectButton.textContent = 'Connect to Pico';
+    connectButton.classList.remove('connected');
+    [syncKnobsButton, updateKnobsButton, midiSelect].forEach(el => el.disabled = true);
+    appendToLog("🔌 Disconnected.\n");
+  }
+
+  // **FIXED**: Send command with a newline character.
+  async function sendCommand(cmd) {
+    if (!writer) return;
+    await writer.write(new TextEncoder().encode(cmd + '\n'));
+  }
+
+  connectButton.onclick = async () => {
+    if (port) {
+      await reader.cancel();
+    } else {
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        writer = port.writable.getWriter();
+        reader = port.readable.getReader();
+        connectButton.textContent = 'Disconnect';
+        connectButton.classList.add('connected');
+        [syncKnobsButton, updateKnobsButton, midiSelect].forEach(el => el.disabled = false);
+        midiSelect.innerHTML = '<option value="">Select a MIDI Input</option>';
+        initMidi(); // Re-initialize MIDI inputs
+        appendToLog("🔌 Connected.\n");
+        readLoop();
+      } catch (error) { appendToLog(`Error: ${error.message}\n`); }
+    }
+  };
+
+  // --- Web MIDI API Logic ---
+  function forwardMidiMessage(event) {
+    if (writer) {
+      writer.write(event.data);
+      appendToLog(`🎹 External MIDI: ${Array.from(event.data).map(b => b.toString(16).padStart(2, '0')).join(' ')}\n`);
+    }
+  }
+
+  function onMidiSuccess(access) {
+    midiAccess = access;
+    if (midiAccess.inputs.size > 0) {
+      midiStatus.textContent = "Select a MIDI device from the list above.";
+      midiAccess.inputs.forEach(input => {
+        midiSelect.innerHTML += `<option value="${input.id}">${input.name}</option>`;
+      });
+    } else {
+      midiStatus.textContent = "No MIDI input devices found.";
+    }
+  }
+
+  function initMidi() {
+    if (navigator.requestMIDIAccess) {
+      navigator.requestMIDIAccess().then(onMidiSuccess, () => midiStatus.textContent = "Web MIDI API access denied.");
+    } else {
+      midiStatus.textContent = "Web MIDI is not supported in this browser.";
+    }
+  }
+
+  midiSelect.onchange = () => {
+    // Detach listener from any previously selected device
+    if (activeMidiInput) activeMidiInput.onmidimessage = null;
+
+    const inputId = midiSelect.value;
+    activeMidiInput = midiAccess.inputs.get(inputId);
+
+    if (activeMidiInput) {
+      activeMidiInput.onmidimessage = forwardMidiMessage;
+      midiStatus.textContent = `Listening to: ${activeMidiInput.name}`;
+    } else {
+      midiStatus.textContent = "Select a MIDI device from the list above.";
+    }
+  };
+
+  // --- Knob Logic (Manual + Sync) ---
+  function renderKnobsFromText() {
+    knobContainer.innerHTML = ''; // Clear existing knobs
+    const configLines = knobConfigText.value.split('\n');
+    configLines.forEach(line => {
+      line = line.trim();
+      if (!line || line.startsWith('#')) return; // Ignore empty/commented lines
+      const [ccStr, ...nameParts] = line.split(':');
+      const cc = parseInt(ccStr, 10);
+      if (nameParts.length > 0 && !isNaN(cc) && cc >= 0 && cc <= 127) {
+        createKnob(cc, nameParts.join(':').trim());
+      }
+    });
+  }
+
+  function createKnob(cc, name) { /* ... same as previous version ... */
+    const wrapper = document.createElement('div'); wrapper.className = 'knob-wrapper';
+    const knob = document.createElement('div'); knob.className = 'knob';
+    const indicator = document.createElement('div'); indicator.className = 'knob-indicator'; knob.appendChild(indicator);
+    const label = document.createElement('div'); label.className = 'knob-label'; wrapper.append(knob, label); knobContainer.appendChild(wrapper);
+    let value = 0; const minAngle = -135, maxAngle = 135;
+    function updateUI(val) { value = Math.max(0, Math.min(127, val)); indicator.style.transform = `rotate(${minAngle + ((maxAngle - minAngle) * (value / 127))}deg)`; label.innerHTML = `${name}<br>(CC ${cc})<br><span class="cc-value">${value}</span>`; }
+    knob.addEventListener('pointerdown', e => {
+      e.preventDefault(); const startY = e.clientY; const startValue = value;
+      const onPointerMove = moveEvent => { const newValue = Math.round(startValue + (startY - moveEvent.clientY) * 0.6); updateUI(newValue); if (writer) writer.write(new Uint8Array([0xB0, cc, value])); };
+      const onPointerUp = () => document.removeEventListener('pointermove', onPointerMove);
+      document.addEventListener('pointermove', onPointerMove, { passive: true }); document.addEventListener('pointerup', onPointerUp, { once: true });
+    });
+    updateUI(0);
+  }
+
+  // --- Keyboard & Other UI Logic ---
+  // (Unchanged from previous version)
+  function changeOctave(delta) { currentOctave = Math.max(0, Math.min(7, currentOctave + delta)); generateKeyboard(); }
+  function updateKeyboardTitle() { document.getElementById('keyboard-title').textContent = `On-Screen Keyboard [C${currentOctave} - B${currentOctave + 2}]`; }
+  function generateKeyboard() { const piano = document.getElementById('piano-container'); piano.innerHTML = ''; const startNote = 12 * (currentOctave + 1); const endNote = startNote + 35; const whiteKeyCount = 21; const whiteKeyWidth = 100 / whiteKeyCount; const blackKeyWidth = whiteKeyWidth * 0.6; let whiteKeyIndex = 0; for (let note = startNote; note <= endNote; note++) { const key = document.createElement('div'); const isBlack = [1, 3, 6, 8, 10].includes((note - startNote) % 12); key.className = `key ${isBlack ? 'black' : 'white'}`; key.dataset.note = note; if (isBlack) { const pos = (whiteKeyIndex - 1) * whiteKeyWidth + whiteKeyWidth - (blackKeyWidth / 2); key.style.left = `${pos}%`; key.style.width = `${blackKeyWidth}%`; } else { key.style.width = `${whiteKeyWidth}%`; if (note % 12 === 0) key.textContent = `C${Math.floor(note / 12) - 1}`; whiteKeyIndex++; } piano.appendChild(key); } updateKeyboardTitle(); }
+  function playNote(element) { if (!element?.classList.contains('key')) return; const note = parseInt(element.dataset.note); if(writer) writer.write(new Uint8Array([0x90, note, 127])); element.classList.add('active'); lastPlayedKeyElement = element; }
+  function stopNote(element) { if (!element?.classList.contains('key')) return; const note = parseInt(element.dataset.note); if(writer) writer.write(new Uint8Array([0x90, note, 0])); element.classList.remove('active'); }
+  document.getElementById('piano-container').addEventListener('pointerdown', e => { isPointerDown = true; playNote(e.target); });
+  document.getElementById('piano-container').addEventListener('pointerover', e => { if (isPointerDown && e.target !== lastPlayedKeyElement) { stopNote(lastPlayedKeyElement); playNote(e.target); } });
+  document.addEventListener('pointerup', () => { isPointerDown = false; stopNote(lastPlayedKeyElement); lastPlayedKeyElement = null; });
+
+  // --- Initial Setup ---
+  window.onload = () => {
+    const savedTheme = localStorage.getItem('theme'); if (savedTheme === 'dark') document.documentElement.classList.add('dark-mode');
+    generateKeyboard();
+    document.getElementById('theme-toggle').onclick = () => { const isDark = document.documentElement.classList.toggle('dark-mode'); localStorage.setItem('theme', isDark ? 'dark' : 'light'); };
+    document.getElementById('octave-down').onclick = () => changeOctave(-1);
+    document.getElementById('octave-up').onclick = () => changeOctave(1);
+    syncKnobsButton.onclick = () => sendCommand('SYNC_KNOBS');
+    updateKnobsButton.onclick = renderKnobsFromText;
+  };
+</script>
+</body>
+</html>
