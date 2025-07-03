@@ -7,24 +7,33 @@
 #include "AudioModule.h"
 #include "freqModSineModule.h"
 #include "cstdio"
+#include "picoAudoSetup_pwm.h"
 
 
 void main_core1() {
-    printf("Hello from core 1!\n");
-    // Create our AudioEngine for 2 channels and SAMPLES_PER_BUFFER frames.
-    const int channels = 2;
-    const int frames = 128;  // Must match SAMPLES_PER_BUFFER in picoAudioSetup.h
-    AudioEngine engine(channels, frames);
+    printf("Audio core (core 1) is running with decoupled architecture.\n");
 
-    // Add modules to the callback
-//     ChocSineModule sineModule(64.0, 64.0, 22050.0, 0.1); // 440 Hz, 44.1 kHz sample rate, 50% volume
-// engine.addModule(&sineModule);
-    FreqModSineModule fmModule(128.0, 1.5, 1, 22050, 0.1);
+    // 1. Create the processing engine. It knows nothing about hardware.
+    AudioEngine engine(PwmAudioOutput::NUM_CHANNELS, PwmAudioOutput::BUFFER_SIZE);
+
+    // 2. Create your audio modules.
+    FreqModSineModule fmModule(
+        128.0,                          // baseFrequency
+        1.5,                            // harmonicityRatio
+        1.0,                            // modulationIndex
+        PwmAudioOutput::SAMPLE_RATE,    // sampleRate (from the output driver's config)
+        0.1                             // volume
+    );
+
+    // 3. Add modules to the engine.
     engine.addModule(&fmModule);
 
+    // 4. Create the hardware output driver, giving it the engine to play.
+    PwmAudioOutput audioOutput(engine);
 
-    engine.start();
-
+    // 5. Start the hardware driver. This will begin the real-time loop.
+    printf("Starting PWM audio output...\n");
+    audioOutput.start();
 }
 
 int main() {

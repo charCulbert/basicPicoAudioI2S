@@ -1,70 +1,48 @@
+// AudioEngine.h
+
 #pragma once
 
 #include <vector>
 #include <cstdint>
 #include <algorithm>
-#include "picoAudioSetup.h"
 #include "choc/audio/choc_SampleBuffers.h"
-#include "AudioModule.h"  // Abstract base class for modules
-
-
-
+#include "AudioModule.h" // Abstract base class for modules
 
 /**
- * AudioEngine wraps the I2S processing loop and CHOC buffer mixing.
- * It creates the I2S pool (via init_audio()) and a scratch float buffer,
- * then in start() it calls the inline run_audio_loop() function.
+ * AudioEngine is a pure processing class, completely decoupled from hardware.
+ * Its sole responsibility is to manage a list of AudioModules and, when requested,
+ * process them to fill a provided floating-point audio buffer.
  */
 class AudioEngine {
 public:
     AudioEngine(int channels, int frames)
       : numChannels(channels), numFrames(frames)
     {
-        // Create the I2S pool.
-        audioPool = init_audio();
-        // Allocate scratch buffer and wrap it as a CHOC interleaved view.
-        floatBuffer.resize(numChannels * frames, 0.0f);
-        floatView = choc::buffer::createInterleavedView<float>(floatBuffer.data(), numChannels, frames);
+        // This engine doesn't allocate its own primary buffer anymore.
+        // It's designed to fill a buffer provided by the caller (the hardware driver).
     }
 
     void addModule(AudioModule* module) {
         modules.push_back(module);
     }
 
-    // The static callback to be passed to run_audio_loop.
-    static void audioCallback(int16_t* samples, uint32_t frames) {
-        instance->processNextBlock(samples, frames);
-    }
+    /**
+     * @brief The core processing function.
+     * It clears the provided buffer, then iterates through all registered modules,
+     * allowing each to add its output to the buffer.
+     * @param bufferToFill An interleaved CHOC view representing the memory to write audio into.
+     */
+    void processNextBlock(choc::buffer::InterleavedView<float>& bufferToFill) {
+        // 1. Clear the buffer to ensure a clean slate for mixing.
+        bufferToFill.clear();
 
-    // start() simply calls run_audio_loop() from picoAudioSetup.h.
-    void start() {
-        // Set the singleton pointer.
-        instance = this;
-        run_audio_loop(audioPool, AudioEngine::audioCallback);
-    }
-
-private:
-    void processNextBlock(int16_t* output, uint32_t frames) {
-        // Clear the CHOC float buffer.
-        choc::buffer::setAllFrames(floatView, [](){ return 0.0f; });
-
-        // Process all modules.
-        for (auto module : modules)
-            module->process(floatView);
-        // Convert the CHOC float mix to int16.
-        for (uint32_t i = 0; i < floatBuffer.size(); ++i) {
-            float s = floatBuffer[i];
-            s = std::max(-1.0f, std::min(1.0f, s));
-            output[i] = static_cast<int16_t>(s * 32767.0f);
+        // 2. Process all modules, mixing their output into the buffer.
+        for (auto module : modules) {
+            module->process(bufferToFill);
         }
     }
 
+private:
     int numChannels, numFrames;
-    std::vector<float> floatBuffer;
-    choc::buffer::InterleavedView<float> floatView;
     std::vector<AudioModule*> modules;
-    struct audio_buffer_pool* audioPool;
-
-    // Singleton pointer used by the static callback.
-    inline static AudioEngine* instance = nullptr;
 };
