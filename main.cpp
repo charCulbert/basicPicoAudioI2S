@@ -1,10 +1,10 @@
 #include <cstdint>
+#include <sys/unistd.h>
+
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
-#include "picoAudioSetup.h"
 #include "AudioEngine.h"
 #include "AudioModule.h"
-#include "chocSineModule.h"
 #include "freqModSineModule.h"
 #include "cstdio"
 
@@ -29,6 +29,7 @@ void main_core1() {
 
 int main() {
     stdio_init_all();
+    sleep_ms(2500);
     printf("Hello from core 0");
     multicore_launch_core1(main_core1);
 

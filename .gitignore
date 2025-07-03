@@ -11,6 +11,8 @@ Makefile
 *.cmakein
 *.swp
 
+choc/
+
 # Output/binary artifacts
 *.elf
 *.map

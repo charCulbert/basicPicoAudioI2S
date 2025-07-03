@@ -2,14 +2,14 @@
 # Minimum required CMake version
 # -----------------------------------------------------------------------------
 cmake_minimum_required(VERSION 3.12)
-set(PICO_BOARD pico2)
+set(PICO_BOARD pico)
 
 # -----------------------------------------------------------------------------
 # Set environment variables for the Pico SDK and Pico Extras.
 # These should point to your local copies.
 # -----------------------------------------------------------------------------
-set(ENV{PICO_SDK_PATH} "/home/char/pico/pico-sdk")
-set(ENV{PICO_EXTRAS_PATH} "/home/char/pico/pico-extras")
+set(ENV{PICO_SDK_PATH} "~/pico/pico-sdk")
+set(ENV{PICO_EXTRAS_PATH} "~/pico/pico-extras")
 
 # -----------------------------------------------------------------------------
 # Tell the import scripts NOT to fetch from Git (use local copies instead)
@@ -19,7 +19,7 @@ set(PICO_EXTRAS_FETCH_FROM_GIT 0)
 
 # -----------------------------------------------------------------------------
 # Optional: Specify exact Git tags for reproducible builds
-# -----------------------------------------------------------------------------
+# ---------------------------------------------e--------------------------------
 # set(PICO_SDK_GIT_TAG v1.5.0)
 # set(PICO_EXTRAS_GIT_TAG v1.5.0)
 
@@ -33,7 +33,7 @@ include(pico_extras_import.cmake)
 # -----------------------------------------------------------------------------
 # Define the project and the languages used (C, C++, and ASM)
 # -----------------------------------------------------------------------------
-project(basicPicoAudioI2S C CXX ASM)
+project(basicPicoAudio C CXX ASM)
 
 # -----------------------------------------------------------------------------
 # Set the C and C++ standard versions
@@ -54,44 +54,41 @@ if (PICO_SDK_VERSION_STRING VERSION_LESS "2.0.0")
 endif()
 
 # -----------------------------------------------------------------------------
-# Define the executable target 'sine_wave_i2s' with its source files.
+# Define the executable target 'basicPicoAudio' with its source files.
 # -----------------------------------------------------------------------------
-add_executable(sine_wave_i2s
+add_executable(basicPicoAudio
         main.cpp
-        chocSineModule.cpp
-        chocSineModule.h
-        AudioModule.h
-        AudioEngine.cpp
-        AudioEngine.h
-        freqModSineModule.cpp
-        freqModSineModule.h
-        ParameterPassing.h
 )
 
 # -----------------------------------------------------------------------------
 # Specify include directories for the target
 # -----------------------------------------------------------------------------
-target_include_directories(sine_wave_i2s PRIVATE include)
+target_include_directories(basicPicoAudio PRIVATE
+choc
+
+)
 
 # -----------------------------------------------------------------------------
 # Link the target with the required Pico libraries
 # -----------------------------------------------------------------------------
-target_link_libraries(sine_wave_i2s PRIVATE
+target_link_libraries(basicPicoAudio PRIVATE
         pico_stdlib
         pico_multicore
         pico_audio_i2s
+        hardware_dma
+        hardware_pwm
 )
 
 # -----------------------------------------------------------------------------
 # Set C++ compile features (C++17 in this case)
 # -----------------------------------------------------------------------------
-target_compile_features(sine_wave_i2s PRIVATE cxx_std_17)
+target_compile_features(basicPicoAudio PRIVATE cxx_std_17)
 
 # -----------------------------------------------------------------------------
 # Define compile-time preprocessor definitions for I2S configuration.
 # Adjust these definitions as needed.
 # -----------------------------------------------------------------------------
-target_compile_definitions(sine_wave_i2s PRIVATE
+target_compile_definitions(basicPicoAudio PRIVATE
         USE_AUDIO_I2S=1
         PICO_AUDIO_I2S_DATA_PIN=10
         PICO_AUDIO_I2S_CLOCK_PIN_BASE=11
@@ -106,10 +103,10 @@ target_compile_definitions(sine_wave_i2s PRIVATE
 # -----------------------------------------------------------------------------
 # Enable USB serial and UART for debugging
 # -----------------------------------------------------------------------------
-pico_enable_stdio_usb(sine_wave_i2s 1)
-pico_enable_stdio_uart(sine_wave_i2s 1)
+pico_enable_stdio_usb(basicPicoAudio 1)
+pico_enable_stdio_uart(basicPicoAudio 1)
 
 # -----------------------------------------------------------------------------
 # Generate additional output files (map/bin/hex, etc.)
 # -----------------------------------------------------------------------------
-pico_add_extra_outputs(sine_wave_i2s)
+pico_add_extra_outputs(basicPicoAudio)
