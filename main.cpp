@@ -19,8 +19,8 @@ void main_core1() {
     // 2. Create your audio modules.
     FreqModSineModule fmModule(
         128.0,                          // baseFrequency
-        1.5,                            // harmonicityRatio
-        1.0,                            // modulationIndex
+        9.5,                            // harmonicityRatio
+        3.6,                            // modulationIndex
         PwmAudioOutput::SAMPLE_RATE,    // sampleRate (from the output driver's config)
         0.1                             // volume
     );
