@@ -8,9 +8,11 @@
 // --- Include our new listener and the audio engine files ---
 #include "MidiSerialListener.h"
 #include "AudioEngine.h"
-#include "picoAudoSetup_pwm.h"
+#include "PwmAudioOutput.h"
 #include "freqModSineModule.h"
 #include "VCAEnvelopeModule.h"
+#include "I2sAudioOutput.h"    // <-- STEP 1: Add the new I2S header
+
 
 // Helper to convert MIDI note number to frequency (still needed by Core 1)
 static inline float midi_note_to_freq(uint8_t note) {
@@ -71,36 +73,61 @@ private:
     float lastVelocityVolume = 1.0f;
 };
 
+//==============================================================================
+// Core 1 Audio Processing - MODIFIED FOR I2S
+//==============================================================================
+// In main.cpp
+
+//==============================================================================
+// Core 1 Audio Processing - MODIFIED FOR I2S
+//==============================================================================
 void main_core1() {
-    AudioEngine engine(PwmAudioOutput::NUM_CHANNELS, PwmAudioOutput::BUFFER_SIZE);
-    FreqModSineModule oscillator(440.0, 1.0, 0.0, PwmAudioOutput::SAMPLE_RATE, 1.0);
-    VCAEnvelopeModule envelope(PwmAudioOutput::SAMPLE_RATE);
+    // ==================================================================
+    // === CHOOSE YOUR AUDIO HARDWARE HERE (ONE-LINE CHANGE) ===
+    //
+    using ActiveAudioOutput = I2sAudioOutput;
+    // using ActiveAudioOutput = PwmAudioOutput;
+    //
+    // ==================================================================
+
+
+    // 1. Initialize the engine with the constants from our chosen hardware class.
+    //    The rest of the code is now generic and doesn't care if it's I2S or PWM.
+    AudioEngine engine(ActiveAudioOutput::NUM_CHANNELS, ActiveAudioOutput::BUFFER_SIZE);
+
+    // 2. Create your synth modules, using the chosen sample rate.
+    FreqModSineModule oscillator(440.0, 1.0, 0.0, ActiveAudioOutput::SAMPLE_RATE, 1.0);
+    VCAEnvelopeModule envelope(ActiveAudioOutput::SAMPLE_RATE);
     MidiControlModule midiControl(&oscillator, &envelope);
+
+    // 3. Add modules to the engine (same as before).
     engine.addModule(&midiControl);
     engine.addModule(&oscillator);
     engine.addModule(&envelope);
-    PwmAudioOutput audioOutput(engine);
+
+    // 4. Instantiate the CHOSEN audio driver, passing it the engine.
+    ActiveAudioOutput audioOutput(engine);
+
+    // 5. Start the blocking audio loop. This will never return.
     audioOutput.start();
 }
 
-
 //==============================================================================
-// The beautifully clean main() function
+// The main() function on Core 0 remains completely unchanged!
 //==============================================================================
 int main() {
     stdio_init_all();
     sleep_ms(2000);
-    printf("\n--- Pico Modular Synth (Refactored) ---\n");
+    printf("\n--- Pico Modular Synth (I2S Output) ---\n");
 
     // Launch the audio engine on the second core.
     multicore_launch_core1(main_core1);
 
-    // Create an instance of our new listener class.
+    // Create an instance of our listener class.
     MidiSerialListener listener;
 
     // Start the infinite listening loop on Core 0.
     listener.run();
 
-    // This part is never reached, but it's good practice.
     return 0;
 }

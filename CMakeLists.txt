@@ -28,7 +28,7 @@ set(PICO_EXTRAS_FETCH_FROM_GIT 0)
 # These must be included before calling project().
 # -----------------------------------------------------------------------------
 include(pico_sdk_import.cmake)
-include(pico_extras_import.cmake)
+# include(pico_extras_import.cmake)
 
 # -----------------------------------------------------------------------------
 # Define the project and the languages used (C, C++, and ASM)
@@ -53,12 +53,17 @@ if (PICO_SDK_VERSION_STRING VERSION_LESS "2.0.0")
     message(FATAL_ERROR "Require at least Raspberry Pi Pico SDK version 2.0.0")
 endif()
 
+
+
 # -----------------------------------------------------------------------------
 # Define the executable target 'basicPicoAudio' with its source files.
 # -----------------------------------------------------------------------------
 add_executable(basicPicoAudio
         main.cpp
 )
+
+pico_generate_pio_header(basicPicoAudio ${CMAKE_CURRENT_LIST_DIR}/audio_i2s.pio)
+
 
 # -----------------------------------------------------------------------------
 # Specify include directories for the target
@@ -76,11 +81,10 @@ target_include_directories(basicPicoAudio PRIVATE
 target_link_libraries(basicPicoAudio PRIVATE
         pico_stdlib
         pico_multicore
-        pico_audio_i2s
         hardware_dma
         hardware_pwm
-        tinyusb_device    # <-- THIS WAS THE MISSING PIECE
-
+        hardware_pio
+        tinyusb_device
 )
 
 # -----------------------------------------------------------------------------
@@ -93,10 +97,6 @@ target_compile_features(basicPicoAudio PRIVATE cxx_std_17)
 # Adjust these definitions as needed.
 # -----------------------------------------------------------------------------
 target_compile_definitions(basicPicoAudio PRIVATE
-        USE_AUDIO_I2S=1
-        PICO_AUDIO_I2S_DATA_PIN=10
-        PICO_AUDIO_I2S_CLOCK_PIN_BASE=11
-
 )
 
 # -------------------------------------------------------------------------------
