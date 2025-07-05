@@ -8,10 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    :root { /* Color variables */ }
-    html.dark-mode { /* Dark mode colors */ }
-    /* NOTE: The full CSS from the previous version is assumed here for brevity */
-    /* It has been slightly adjusted below for the new elements */
     :root {
       --bg-color: #ffffff; --fg-color: #000000; --border-color: #dddddd;
       --accent-color: #555555; --active-color: #cccccc; --subtle-bg: #f9f9f9;
@@ -84,12 +80,12 @@
     <div class="piano-container" id="piano-container"></div>
 
     <div class="section-header"><h3>MIDI CC Controls</h3></div>
+    <p id="rotary-status" style="margin: -1em 0 1em 0; font-size: 0.9em; opacity: 0.8;"> </p>
     <div class="controls-grid">
       <div id="knob-container"></div>
       <div id="knob-config-area">
         <button id="sync-knobs" disabled>1. Sync Knobs from Pico</button>
         <textarea id="knob-config" placeholder="Click 'Sync' to populate from Pico, or enter your own definitions (e.g., '1:Modulation')."></textarea>
-        <button id="update-knobs" disabled>2. Update Knobs on UI</button>
       </div>
     </div>
 
@@ -108,44 +104,86 @@
   const log = document.getElementById('log');
   const connectButton = document.getElementById('connect');
   const syncKnobsButton = document.getElementById('sync-knobs');
-  const updateKnobsButton = document.getElementById('update-knobs');
   const knobConfigText = document.getElementById('knob-config');
   const knobContainer = document.getElementById('knob-container');
   const midiSelect = document.getElementById('midi-input-select');
   const midiStatus = document.getElementById('midi-status');
+  const rotaryStatus = document.getElementById('rotary-status');
 
   // --- Core Serial Communication & Parsing ---
   function appendToLog(text) { log.textContent += text; log.scrollTop = log.scrollHeight; }
 
   function processIncomingLine(line) {
+    if (line.startsWith('LOG:')) {
+      appendToLog(line.substring(4) + '\n');
+      return;
+    }
+
+    // Announce which parameter the physical knob is controlling
+    if (line.startsWith('SELECT:')) {
+      rotaryStatus.textContent = `Physical Knob controlling: ${line.substring(7)}`;
+      return;
+    }
+
+    // Update a knob's value from a state message (from physical knob or MIDI)
+    if (line.startsWith('STATE:')) {
+      const parts = line.substring(6).split(':');
+      if (parts.length === 2) {
+        const cc = parseInt(parts[0], 10);
+        const normValue = parseFloat(parts[1]);
+        const knob = knobContainer.querySelector(`.knob[data-cc='${cc}']`);
+        if (knob && knob.updateUI) {
+          knob.updateUI(normValue * 127, false); // Convert normalized [0,1] to MIDI [0,127]
+        }
+      }
+      return;
+    }
+
+    // Handle the UI sync protocol
     if (line.startsWith('KNOB_UPDATE_START')) {
       isParsingKnobs = true;
-      knobConfigText.value = ''; // Clear textarea
+      // When sync starts, immediately clear the UI and the text area
+      knobContainer.innerHTML = '';
+      knobConfigText.value = '';
       appendToLog('🔄 Receiving knob configuration from Pico...\n');
       return;
     }
     if (line.startsWith('KNOB_UPDATE_END')) {
       isParsingKnobs = false;
-      appendToLog('✅ Knob definitions received. Click "Update Knobs on UI" to apply.\n');
+      appendToLog('✅ Sync complete. UI is up to date.\n');
+      // No more need to click a button. The process is now automatic.
       return;
     }
+
+    // ========================= MODIFIED LOGIC =========================
     if (isParsingKnobs && line.startsWith('CC_DEF:')) {
       const parts = line.split(':');
       if (parts.length === 3) {
-        knobConfigText.value += `${parts[1]}:${parts[2]}\n`;
+        const cc = parseInt(parts[1], 10);
+        const name = parts[2];
+
+        // Add the definition to the text area for user reference
+        knobConfigText.value += `${cc}:${name}\n`;
+
+        // **Immediately create the knob on the UI**
+        if (!isNaN(cc) && cc >= 0 && cc <= 127) {
+          createKnob(cc, name);
+        }
       }
       return;
     }
-    appendToLog(line + '\n');
+    // =================================================================
+
+    appendToLog(`[RAW] ${line}\n`);
   }
 
+  // ... (readLoop, sendCommand, connectButton.onclick are unchanged) ...
   async function readLoop() {
     const textDecoder = new TextDecoder();
     while (port?.readable) {
       try {
         const { value, done } = await reader.read();
         if (done) break;
-
         lineBuffer += textDecoder.decode(value, { stream: true });
         let eolIndex;
         while ((eolIndex = lineBuffer.indexOf('\n')) >= 0) {
@@ -155,17 +193,16 @@
         }
       } catch (error) { appendToLog(`Read loop error: ${error.message}\n`); break; }
     }
-    writer.releaseLock();
-    reader.releaseLock();
+    if (writer) writer.releaseLock();
+    if (reader) reader.releaseLock();
     if (port) await port.close();
     port = writer = reader = null;
     connectButton.textContent = 'Connect to Pico';
     connectButton.classList.remove('connected');
-    [syncKnobsButton, updateKnobsButton, midiSelect].forEach(el => el.disabled = true);
+    [syncKnobsButton, midiSelect].forEach(el => el.disabled = true);
     appendToLog("🔌 Disconnected.\n");
   }
 
-  // **FIXED**: Send command with a newline character.
   async function sendCommand(cmd) {
     if (!writer) return;
     await writer.write(new TextEncoder().encode(cmd + '\n'));
@@ -182,23 +219,22 @@
         reader = port.readable.getReader();
         connectButton.textContent = 'Disconnect';
         connectButton.classList.add('connected');
-        [syncKnobsButton, updateKnobsButton, midiSelect].forEach(el => el.disabled = false);
+        [syncKnobsButton, midiSelect].forEach(el => el.disabled = false);
         midiSelect.innerHTML = '<option value="">Select a MIDI Input</option>';
-        initMidi(); // Re-initialize MIDI inputs
+        initMidi();
         appendToLog("🔌 Connected.\n");
         readLoop();
       } catch (error) { appendToLog(`Error: ${error.message}\n`); }
     }
   };
 
-  // --- Web MIDI API Logic ---
+  // --- Web MIDI API Logic (unchanged) ---
   function forwardMidiMessage(event) {
     if (writer) {
       writer.write(event.data);
-      appendToLog(`🎹 External MIDI: ${Array.from(event.data).map(b => b.toString(16).padStart(2, '0')).join(' ')}\n`);
+      appendToLog(`🎹 Ext MIDI: ${Array.from(event.data).map(b => b.toString(16).padStart(2, '0')).join(' ')}\n`);
     }
   }
-
   function onMidiSuccess(access) {
     midiAccess = access;
     if (midiAccess.inputs.size > 0) {
@@ -206,67 +242,69 @@
       midiAccess.inputs.forEach(input => {
         midiSelect.innerHTML += `<option value="${input.id}">${input.name}</option>`;
       });
-    } else {
-      midiStatus.textContent = "No MIDI input devices found.";
-    }
+    } else { midiStatus.textContent = "No MIDI input devices found."; }
   }
-
   function initMidi() {
     if (navigator.requestMIDIAccess) {
       navigator.requestMIDIAccess().then(onMidiSuccess, () => midiStatus.textContent = "Web MIDI API access denied.");
-    } else {
-      midiStatus.textContent = "Web MIDI is not supported in this browser.";
-    }
+    } else { midiStatus.textContent = "Web MIDI is not supported in this browser."; }
   }
-
   midiSelect.onchange = () => {
-    // Detach listener from any previously selected device
     if (activeMidiInput) activeMidiInput.onmidimessage = null;
-
     const inputId = midiSelect.value;
     activeMidiInput = midiAccess.inputs.get(inputId);
-
     if (activeMidiInput) {
       activeMidiInput.onmidimessage = forwardMidiMessage;
       midiStatus.textContent = `Listening to: ${activeMidiInput.name}`;
-    } else {
-      midiStatus.textContent = "Select a MIDI device from the list above.";
-    }
+    } else { midiStatus.textContent = "Select a MIDI device from the list above."; }
   };
 
-  // --- Knob Logic (Manual + Sync) ---
-  function renderKnobsFromText() {
-    knobContainer.innerHTML = ''; // Clear existing knobs
-    const configLines = knobConfigText.value.split('\n');
-    configLines.forEach(line => {
-      line = line.trim();
-      if (!line || line.startsWith('#')) return; // Ignore empty/commented lines
-      const [ccStr, ...nameParts] = line.split(':');
-      const cc = parseInt(ccStr, 10);
-      if (nameParts.length > 0 && !isNaN(cc) && cc >= 0 && cc <= 127) {
-        createKnob(cc, nameParts.join(':').trim());
-      }
-    });
-  }
-
-  function createKnob(cc, name) { /* ... same as previous version ... */
+  // THIS IS THE CORRECTED KNOB CREATION FUNCTION
+  function createKnob(cc, name) {
     const wrapper = document.createElement('div'); wrapper.className = 'knob-wrapper';
     const knob = document.createElement('div'); knob.className = 'knob';
-    const indicator = document.createElement('div'); indicator.className = 'knob-indicator'; knob.appendChild(indicator);
-    const label = document.createElement('div'); label.className = 'knob-label'; wrapper.append(knob, label); knobContainer.appendChild(wrapper);
-    let value = 0; const minAngle = -135, maxAngle = 135;
-    function updateUI(val) { value = Math.max(0, Math.min(127, val)); indicator.style.transform = `rotate(${minAngle + ((maxAngle - minAngle) * (value / 127))}deg)`; label.innerHTML = `${name}<br>(CC ${cc})<br><span class="cc-value">${value}</span>`; }
+    knob.dataset.cc = cc; // For easy selection
+    const indicator = document.createElement('div'); indicator.className = 'knob-indicator';
+    const label = document.createElement('div'); label.className = 'knob-label';
+    knob.appendChild(indicator);
+    wrapper.append(knob, label);
+    knobContainer.appendChild(wrapper);
+
+    let value = 0; // MIDI value [0, 127]
+    const minAngle = -135, maxAngle = 135;
+
+    // The single point of truth for updating this knob's UI
+    function updateUI(newMidiValue, sendMidi = true) {
+      value = Math.max(0, Math.min(127, newMidiValue));
+      const normValue = value / 127.0;
+
+      indicator.style.transform = `rotate(${minAngle + ((maxAngle - minAngle) * normValue)}deg)`;
+      label.innerHTML = `${name}<br>(CC ${cc})<br><span class="cc-value">${Math.round(value)}</span>`;
+
+      if (sendMidi && writer) {
+        writer.write(new Uint8Array([0xB0, cc, Math.round(value)]));
+      }
+    }
+
+    knob.updateUI = updateUI; // Expose the function so it can be called from outside
+
     knob.addEventListener('pointerdown', e => {
-      e.preventDefault(); const startY = e.clientY; const startValue = value;
-      const onPointerMove = moveEvent => { const newValue = Math.round(startValue + (startY - moveEvent.clientY) * 0.6); updateUI(newValue); if (writer) writer.write(new Uint8Array([0xB0, cc, value])); };
+      e.preventDefault();
+      const startY = e.clientY;
+      const startValue = value;
+      const onPointerMove = moveEvent => {
+        const newValue = startValue + (startY - moveEvent.clientY) * 0.6;
+        updateUI(newValue, true);
+      };
       const onPointerUp = () => document.removeEventListener('pointermove', onPointerMove);
-      document.addEventListener('pointermove', onPointerMove, { passive: true }); document.addEventListener('pointerup', onPointerUp, { once: true });
+      document.addEventListener('pointermove', onPointerMove, { passive: true });
+      document.addEventListener('pointerup', onPointerUp, { once: true });
     });
-    updateUI(0);
+
+    updateUI(64, false); // Initialize knob to the center
   }
 
-  // --- Keyboard & Other UI Logic ---
-  // (Unchanged from previous version)
+  // --- Keyboard & Other UI Logic (unchanged) ---
   function changeOctave(delta) { currentOctave = Math.max(0, Math.min(7, currentOctave + delta)); generateKeyboard(); }
   function updateKeyboardTitle() { document.getElementById('keyboard-title').textContent = `On-Screen Keyboard [C${currentOctave} - B${currentOctave + 2}]`; }
   function generateKeyboard() { const piano = document.getElementById('piano-container'); piano.innerHTML = ''; const startNote = 12 * (currentOctave + 1); const endNote = startNote + 35; const whiteKeyCount = 21; const whiteKeyWidth = 100 / whiteKeyCount; const blackKeyWidth = whiteKeyWidth * 0.6; let whiteKeyIndex = 0; for (let note = startNote; note <= endNote; note++) { const key = document.createElement('div'); const isBlack = [1, 3, 6, 8, 10].includes((note - startNote) % 12); key.className = `key ${isBlack ? 'black' : 'white'}`; key.dataset.note = note; if (isBlack) { const pos = (whiteKeyIndex - 1) * whiteKeyWidth + whiteKeyWidth - (blackKeyWidth / 2); key.style.left = `${pos}%`; key.style.width = `${blackKeyWidth}%`; } else { key.style.width = `${whiteKeyWidth}%`; if (note % 12 === 0) key.textContent = `C${Math.floor(note / 12) - 1}`; whiteKeyIndex++; } piano.appendChild(key); } updateKeyboardTitle(); }
@@ -284,7 +322,6 @@
     document.getElementById('octave-down').onclick = () => changeOctave(-1);
     document.getElementById('octave-up').onclick = () => changeOctave(1);
     syncKnobsButton.onclick = () => sendCommand('SYNC_KNOBS');
-    updateKnobsButton.onclick = renderKnobsFromText;
   };
 </script>
 </body>

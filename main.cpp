@@ -1,133 +1,65 @@
 #include <cstdint>
-#include <vector>
-#include <string>
-#include <cmath>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 
-// --- Include our new listener and the audio engine files ---
+// --- Core Application Headers ---
+#include "ParameterStore.h"
 #include "MidiSerialListener.h"
+#include "RotaryEncoderListener.h"
 #include "AudioEngine.h"
-#include "PwmAudioOutput.h"
-#include "freqModSineModule.h"
-#include "VCAEnvelopeModule.h"
-#include "I2sAudioOutput.h"    // <-- STEP 1: Add the new I2S header
+#include "I2sAudioOutput.h"
 
-
-// Helper to convert MIDI note number to frequency (still needed by Core 1)
-static inline float midi_note_to_freq(uint8_t note) {
-    return 440.0f * powf(2.0f, (note - 69.0f) / 12.0f);
-}
+// --- Synth-Specific Module Headers ---
+#include "freqModSineModule.h" // Our all-in-one synth voice
 
 //==============================================================================
-// Core 1 Audio Processing remains here as it's launched by main()
-//==============================================================================
-class MidiControlModule : public AudioModule {
-public:
-    MidiControlModule(FreqModSineModule* osc, VCAEnvelopeModule* env)
-      : oscillator(osc), envelope(env) {}
-
-    void process(choc::buffer::InterleavedView<float> /*buffer*/) override {
-        // This logic is unchanged.
-        while (multicore_fifo_rvalid()) {
-            uint32_t packet = multicore_fifo_pop_blocking();
-            uint8_t command = (packet >> 24) & 0xFF;
-            uint8_t data1   = (packet >> 16) & 0xFF;
-            uint8_t data2   = (packet >> 8)  & 0xFF;
-
-            switch (command) {
-                case 0x90: { // NOTE_ON
-                    lastVelocityVolume = data2 / 127.0f;
-                    oscillator->setBaseFrequency(midi_note_to_freq(data1));
-                    oscillator->setVolume(masterVolume * lastVelocityVolume);
-                    envelope->noteOn();
-                    break;
-                }
-                case 0x80: { // NOTE_OFF
-                    envelope->noteOff();
-                    break;
-                }
-                case 0xB0: { // CONTROL_CHANGE
-                    float value_norm = data2 / 127.0f;
-                    switch (data1) {
-                        case 1:  oscillator->setModulationIndex(value_norm * 10.0f); break;
-                        case 10: oscillator->setHarmonicityRatio(0.5f + (value_norm * 3.5f)); break;
-                        case 74: envelope->setAttackTime(0.001f + (value_norm * 2.0f)); break;
-                        case 71: envelope->setDecayTime(0.001f + (value_norm * 3.0f)); break;
-                        case 72: envelope->setReleaseTime(0.01f + (value_norm * 5.0f)); break;
-                        case 73: envelope->setSustainLevel(value_norm); break;
-                        case 75:
-                            masterVolume = value_norm;
-                            oscillator->setVolume(masterVolume * lastVelocityVolume);
-                            break;
-                    }
-                    break;
-                }
-            }
-        }
-    }
-private:
-    FreqModSineModule* oscillator;
-    VCAEnvelopeModule* envelope;
-    float masterVolume = 1.0f;
-    float lastVelocityVolume = 1.0f;
-};
-
-//==============================================================================
-// Core 1 Audio Processing - MODIFIED FOR I2S
-//==============================================================================
-// In main.cpp
-
-//==============================================================================
-// Core 1 Audio Processing - MODIFIED FOR I2S
+// Core 1: The Audio Thread
 //==============================================================================
 void main_core1() {
-    // ==================================================================
-    // === CHOOSE YOUR AUDIO HARDWARE HERE (ONE-LINE CHANGE) ===
-    //
+    // Define the audio hardware we are using
     using ActiveAudioOutput = I2sAudioOutput;
-    // using ActiveAudioOutput = PwmAudioOutput;
-    //
-    // ==================================================================
+    const float SAMPLE_RATE = ActiveAudioOutput::SAMPLE_RATE;
 
-
-    // 1. Initialize the engine with the constants from our chosen hardware class.
-    //    The rest of the code is now generic and doesn't care if it's I2S or PWM.
+    // 1. Create the processing engine
     AudioEngine engine(ActiveAudioOutput::NUM_CHANNELS, ActiveAudioOutput::BUFFER_SIZE);
 
-    // 2. Create your synth modules, using the chosen sample rate.
-    FreqModSineModule oscillator(440.0, 1.0, 0.0, ActiveAudioOutput::SAMPLE_RATE, 1.0);
-    VCAEnvelopeModule envelope(ActiveAudioOutput::SAMPLE_RATE);
-    MidiControlModule midiControl(&oscillator, &envelope);
+    // 2. Create the "smart" synth voice module. It handles everything.
+    FreqModSineModule synth_voice(SAMPLE_RATE);
 
-    // 3. Add modules to the engine (same as before).
-    engine.addModule(&midiControl);
-    engine.addModule(&oscillator);
-    engine.addModule(&envelope);
+    // 3. Add the single synth voice to the engine.
+    engine.addModule(&synth_voice);
 
-    // 4. Instantiate the CHOSEN audio driver, passing it the engine.
+    // 4. Instantiate the audio hardware driver and give it the engine
     ActiveAudioOutput audioOutput(engine);
 
-    // 5. Start the blocking audio loop. This will never return.
+    // 5. This call blocks forever and runs the audio loop
     audioOutput.start();
 }
 
 //==============================================================================
-// The main() function on Core 0 remains completely unchanged!
+// Core 0: The Control Thread
 //==============================================================================
 int main() {
     stdio_init_all();
-    sleep_ms(2000);
-    printf("\n--- Pico Modular Synth (I2S Output) ---\n");
 
-    // Launch the audio engine on the second core.
+    // IMPORTANT: Initialize the global parameter store BEFORE launching Core 1
+    initialize_parameters();
+
+    sleep_ms(2000);
+    printf("LOG:--- Pico Synth (Integrated Voice) Initialized ---\n");
+
+    // Launch the audio engine on the second core
     multicore_launch_core1(main_core1);
 
-    // Create an instance of our listener class.
-    MidiSerialListener listener;
+    // Create the listeners that will run on this core
+    MidiSerialListener midi_listener;
+    RotaryEncoderListener rotary_listener;
 
-    // Start the infinite listening loop on Core 0.
-    listener.run();
+    // The main control loop for Core 0
+    while (true) {
+        midi_listener.update();
+        rotary_listener.update();
+    }
 
-    return 0;
+    return 0; // Will never be reached
 }
