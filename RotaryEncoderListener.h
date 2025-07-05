@@ -24,7 +24,7 @@ public:
         if (result.action == RotaryEncoder::Action::ROTATED) {
             if (g_synth_parameters.empty()) return;
             Parameter* p = g_synth_parameters[active_parameter_index];
-            float new_norm = p->getNormalizedValue() + (result.value_change * 0.015f);
+            float new_norm = p->getNormalizedValue() + (result.value_change * 0.008f);
             p->setNormalizedValue(new_norm);
             broadcast_parameter_state(p);
         }
