@@ -1,81 +1,60 @@
+// FILE: VCAEnvelopeModule.h (Corrected)
+
 #pragma once
 
 #include "AudioModule.h"
-#include <cmath>     // For std::max, std::min
-#include <algorithm> // For std::max, std::min on some compilers
+#include "choc/audio/choc_SampleBuffers.h" // === FIX: Added include for choc::buffer::applyGain
+#include <cmath>
+#include <algorithm>
 
 class VCAEnvelopeModule : public AudioModule {
 public:
     enum class State { Idle, Attack, Decay, Sustain, Release };
 
-    VCAEnvelopeModule(double sampleRate)
-        : sampleRate(sampleRate) {
+    VCAEnvelopeModule(double sampleRate) : sampleRate(sampleRate) {
         setAttackTime(0.01);
         setDecayTime(0.2);
         setSustainLevel(0.7);
         setReleaseTime(0.5);
     }
 
-    //==============================================================================
-    // Public Control Methods
-    //==============================================================================
     void noteOn() {
-        if (currentState == State::Release) {
-             recalculateAttackIncrementFromCurrentLevel();
-        }
+        // This logic correctly creates a smooth re-trigger from any prior state.
         currentState = State::Attack;
     }
 
     void noteOff() {
-        if (currentState != State::Idle && currentState != State::Release) {
+        if (currentState != State::Idle) {
             currentState = State::Release;
             recalculateReleaseIncrement();
         }
     }
 
-    bool isActive() const {
-        return currentState != State::Idle;
-    }
+    bool isActive() const { return currentState != State::Idle; }
 
-    //==============================================================================
-    // Parameter Setters
-    //==============================================================================
     void setAttackTime(double seconds) {
         attackTimeSeconds = std::max(0.001, seconds);
         recalculateAttackIncrement();
     }
-
     void setDecayTime(double seconds) {
         decayTimeSeconds = std::max(0.001, seconds);
         recalculateDecayIncrement();
     }
-
     void setSustainLevel(double level) {
         sustainLevel = std::max(0.0, std::min(1.0, level));
         recalculateDecayIncrement();
     }
-
     void setReleaseTime(double seconds) {
         releaseTimeSeconds = std::max(0.001, seconds);
     }
 
-    //==============================================================================
-    // Parameter Getters (NEWLY ADDED)
-    //==============================================================================
-    double getAttackTime() const { return attackTimeSeconds; }
-    double getDecayTime() const { return decayTimeSeconds; }
-    double getSustainLevel() const { return sustainLevel; }
-    double getReleaseTime() const { return releaseTimeSeconds; }
-
-    //==============================================================================
-    // Core Processing
-    //==============================================================================
     void process(choc::buffer::InterleavedView<float>& buffer) override {
         auto numFrames = buffer.getNumFrames();
         auto numChannels = buffer.getNumChannels();
 
         if (currentState == State::Idle && currentLevel == 0.0) {
-            buffer.clear();
+            // === FIX: Use the correct CHOC library function 'applyGain' instead of 'multiplyBy' ===
+            choc::buffer::applyGain(buffer, 0.0f);
             return;
         }
 
@@ -86,7 +65,6 @@ public:
                     if (currentLevel >= 1.0) {
                         currentLevel = 1.0;
                         currentState = State::Decay;
-                        recalculateAttackIncrement();
                     }
                     break;
                 case State::Decay:
@@ -119,18 +97,13 @@ public:
     }
 
 private:
-    void recalculateAttackIncrement() { attackIncrement = 1.0 / (attackTimeSeconds * sampleRate); }
-    void recalculateAttackIncrementFromCurrentLevel() {
-        double remainingRise = 1.0 - currentLevel;
-        if (remainingRise > 0) { attackIncrement = remainingRise / (attackTimeSeconds * sampleRate); }
-        else { recalculateAttackIncrement(); }
-    }
-    void recalculateDecayIncrement() { decayIncrement = (1.0 - sustainLevel) / (decayTimeSeconds * sampleRate); }
-    void recalculateReleaseIncrement() { releaseIncrement = currentLevel / (releaseTimeSeconds * sampleRate); }
+    void recalculateAttackIncrement() { attackIncrement = (attackTimeSeconds > 0.0) ? (1.0 / (attackTimeSeconds * sampleRate)) : 1.0; }
+    void recalculateDecayIncrement() { decayIncrement = (decayTimeSeconds > 0.0) ? ((1.0 - sustainLevel) / (decayTimeSeconds * sampleRate)) : 1.0; }
+    void recalculateReleaseIncrement() { releaseIncrement = (releaseTimeSeconds > 0.0 && currentLevel > 0.0) ? (currentLevel / (releaseTimeSeconds * sampleRate)) : currentLevel; }
 
     double sampleRate;
     State currentState = State::Idle;
     double attackTimeSeconds, decayTimeSeconds, sustainLevel, releaseTimeSeconds;
-    double attackIncrement, decayIncrement, releaseIncrement;
+    double attackIncrement = 0.0, decayIncrement = 0.0, releaseIncrement = 0.0;
     double currentLevel = 0.0;
 };

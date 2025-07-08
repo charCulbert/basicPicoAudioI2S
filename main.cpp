@@ -8,6 +8,7 @@
 #include "RotaryEncoderListener.h"
 #include "AudioEngine.h"
 #include "I2sAudioOutput.h"
+// #include "PolyFreqModSineModule.h"
 
 // --- Synth-Specific Module Headers ---
 #include "freqModSineModule.h" // Our all-in-one synth voice
@@ -23,7 +24,7 @@ void main_core1() {
     static AudioEngine engine(ActiveAudioOutput::NUM_CHANNELS, ActiveAudioOutput::BUFFER_SIZE);
 
     // 2. Create the "smart" synth voice module. It handles everything.
-    FreqModSineModule synth_voice(ActiveAudioOutput::SAMPLE_RATE);
+    DuophonicFMModule synth_voice(ActiveAudioOutput::SAMPLE_RATE);
 
     // 3. Add the single synth voice to the engine.
     engine.addModule(&synth_voice);

@@ -21,34 +21,46 @@ class SmoothedValue
 {
 public:
     SmoothedValue() noexcept
-        : currentValue(0), targetValue(0), step(0), remainingSamples(0)
+        : currentValue(0), targetValue(0), step(0), remainingSamples(0), rampSamples(0)
     {
     }
 
     explicit SmoothedValue(FloatType initialValue) noexcept
-        : currentValue(initialValue), targetValue(initialValue), step(0), remainingSamples(0)
+        : currentValue(initialValue), targetValue(initialValue), step(0), remainingSamples(0), rampSamples(0)
     {
     }
 
-    /// Resets the ramp length (in samples) and sets the current value to the target.
+    /// Sets the ramp length (in samples) for future transitions
     void reset(int numSamples) noexcept
     {
-        remainingSamples = numSamples;
-        currentValue = targetValue;
-        step = 0;
+        rampSamples = numSamples;
+        // Don't change currentValue or targetValue here!
     }
 
-    /// Resets using a ramp length in seconds.
+    /// Sets the ramp length using seconds
     void reset(double sampleRate, double rampLengthInSeconds) noexcept
     {
         int numSamples = static_cast<int>(std::round(sampleRate * rampLengthInSeconds));
         reset(numSamples);
     }
 
-    /// Sets a new target value and calculates the step based on the current ramp length.
+    /// Sets both current and target to the same value (for initialization)
+    void setValue(FloatType value) noexcept
+    {
+        currentValue = value;
+        targetValue = value;
+        remainingSamples = 0;
+        step = 0;
+    }
+
+    /// Sets a new target value and starts ramping towards it
     void setTargetValue(FloatType newValue) noexcept
     {
+        if (newValue == targetValue) return; // No change needed
+
         targetValue = newValue;
+        remainingSamples = rampSamples;
+
         if (remainingSamples > 0)
             step = (targetValue - currentValue) / static_cast<FloatType>(remainingSamples);
         else
@@ -62,10 +74,10 @@ public:
         {
             currentValue += step;
             --remainingSamples;
-        }
-        else
-        {
-            currentValue = targetValue;
+
+            // Clamp to target on final sample to avoid floating point drift
+            if (remainingSamples == 0)
+                currentValue = targetValue;
         }
         return currentValue;
     }
@@ -76,7 +88,10 @@ public:
     /// Returns the target value.
     FloatType getTargetValue() const noexcept { return targetValue; }
 
+    /// Returns true if currently ramping
+    bool isSmoothing() const noexcept { return remainingSamples > 0; }
+
 private:
     FloatType currentValue, targetValue, step;
-    int remainingSamples;
+    int remainingSamples, rampSamples;
 };
