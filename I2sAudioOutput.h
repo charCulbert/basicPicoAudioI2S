@@ -28,7 +28,7 @@
 class I2sAudioOutput {
 public:
     // --- Core Audio Configuration ---
-    static constexpr int SAMPLE_RATE = 44100;
+    static constexpr int SAMPLE_RATE = 22050;
     static constexpr int BUFFER_SIZE = 128; // Number of L/R sample pairs per buffer
     static constexpr int NUM_CHANNELS = 2;     // Stereo
 
@@ -38,6 +38,7 @@ public:
     //   - CLOCK_PIN_BASE + 1 = BCLK
     static constexpr int CLOCK_PIN_BASE = 19; // This will be the LRCLK pin
     static constexpr int DATA_PIN = 21;
+    static constexpr int DEBUG_PIN = 26; // <<< ADD THIS: Define our debug pin
 
 
     /**
@@ -46,6 +47,10 @@ public:
      * @param engine The AudioEngine instance that will generate the audio samples.
      */
     I2sAudioOutput(AudioEngine& engine) : audioEngine(engine) {
+        // --- 1. Debug Pin Setup --- // <<< ADD THIS SECTION
+        gpio_init(DEBUG_PIN);
+        gpio_set_dir(DEBUG_PIN, GPIO_OUT);
+        gpio_put(DEBUG_PIN, false); // Ensure it starts low
 
         // --- 1. PIO Setup ---
         pio = pio0; // Use pio0
@@ -53,10 +58,20 @@ public:
         uint offset = pio_add_program(pio, &audio_i2s_program);
 
         // Calculate the PIO clock divider.
-        // The I2S protocol requires 32 clock cycles per stereo sample (16 for left, 16 for right).
-        // The PIO program outputs 1 bit per PIO clock cycle.
-        // So, PIO Clock = Sample Rate * 32
-        float clock_div = (float)clock_get_hz(clk_sys) / (float)(SAMPLE_RATE * 32);
+        // The I2S protocol requires a specific clock frequency relationship.
+        // For each stereo sample (32 bits total), we need to generate 32 BCLK cycles.
+        // Our PIO program (audio_i2s.pio) takes 2 PIO clock cycles to output 1 bit of data
+        // (one cycle for BCLK low, one for BCLK high).
+        //
+        // Therefore, the total number of PIO cycles per stereo sample is:
+        //   32 bits/sample * 2 PIO cycles/bit = 64 PIO cycles/sample
+        //
+        // The required PIO frequency is:
+        //   SAMPLE_RATE * 64
+        //
+        // And the clock divider is:
+        //   System Clock / (SAMPLE_RATE * 64)
+        float clock_div = (float)clock_get_hz(clk_sys) / (float)(SAMPLE_RATE * 64);
 
         // Get the default PIO config and modify it for our needs
         pio_sm_config sm_config = audio_i2s_program_get_default_config(offset);
@@ -134,6 +149,8 @@ private:
      * then it converts that float data into the packed uint32_t format required by the PIO/DMA hardware.
      */
     void fillAndConvertNextBuffer() {
+        gpio_put(DEBUG_PIN, true); // <<< ADD THIS: Set pin HIGH at the start
+
         // 1. Create a CHOC view pointing to our temporary float buffer.
         auto float_workspace_view = choc::buffer::createInterleavedView<float>(
             dsp_float_buffer, NUM_CHANNELS, BUFFER_SIZE
@@ -160,6 +177,8 @@ private:
             // Let's assume Right Channel is ws=0 and Left Channel is ws=1.
             hardware_buffer[i] = (uint32_t)((uint16_t)sample_r_s16) << 16 | (uint16_t)sample_l_s16;
         }
+
+        gpio_put(DEBUG_PIN, false); // <<< ADD THIS: Set pin LOW at the end
     }
 
     /**
@@ -177,6 +196,7 @@ private:
 
         // Flip the index to signal to the main loop that it can now fill the other buffer.
         dma_buffer_to_fill_idx = 1 - dma_buffer_to_fill_idx;
+
     }
 
     // --- Member Variables ---

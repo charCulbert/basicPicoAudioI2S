@@ -8,6 +8,8 @@
 #include "choc/audio/choc_SampleBuffers.h"
 #include "AudioModule.h" // Abstract base class for modules
 
+
+
 /**
  * AudioEngine is a pure processing class, completely decoupled from hardware.
  * Its sole responsibility is to manage a list of AudioModules and, when requested,
@@ -33,6 +35,8 @@ public:
      * @param bufferToFill An interleaved CHOC view representing the memory to write audio into.
      */
     void processNextBlock(choc::buffer::InterleavedView<float>& bufferToFill) {
+
+
         // 1. Clear the buffer to ensure a clean slate for mixing.
         bufferToFill.clear();
 
@@ -40,6 +44,7 @@ public:
         for (auto module : modules) {
             module->process(bufferToFill);
         }
+
     }
 
 private:

@@ -1,15 +1,31 @@
+# == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
+if(WIN32)
+    set(USERHOME $ENV{USERPROFILE})
+else()
+    set(USERHOME $ENV{HOME})
+endif()
+set(sdkVersion 2.1.1)
+set(toolchainVersion 14_2_Rel1)
+set(picotoolVersion 2.1.1)
+set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+if (EXISTS ${picoVscode})
+    include(${picoVscode})
+endif()
+# ====================================================================================
 # -----------------------------------------------------------------------------
 # Minimum required CMake version
 # -----------------------------------------------------------------------------
 cmake_minimum_required(VERSION 3.12)
-set(PICO_BOARD pico)
+set(PICO_BOARD pico2_w)
 
 # -----------------------------------------------------------------------------
 # Set environment variables for the Pico SDK and Pico Extras.
 # These should point to your local copies.
 # -----------------------------------------------------------------------------
-set(ENV{PICO_SDK_PATH} "~/pico/pico-sdk")
-set(ENV{PICO_EXTRAS_PATH} "~/pico/pico-extras")
+set(ENV{PICO_SDK_PATH} "/Users/charlieculbert/.pico-sdk/sdk/2.1.1
+")
+set(ENV{PICO_EXTRAS_PATH} "/Users/charlieculbert/.pico-sdk/sdk/2.1.1
+")
 
 # -----------------------------------------------------------------------------
 # Tell the import scripts NOT to fetch from Git (use local copies instead)
@@ -84,7 +100,10 @@ target_link_libraries(basicPicoAudio PRIVATE
         hardware_dma
         hardware_pwm
         hardware_pio
+        hardware_interp
         tinyusb_device
+        pico_stdio_usb  # <-- Add this line
+
 )
 
 # -----------------------------------------------------------------------------

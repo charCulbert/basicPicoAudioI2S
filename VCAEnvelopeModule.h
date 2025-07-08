@@ -70,7 +70,7 @@ public:
     //==============================================================================
     // Core Processing
     //==============================================================================
-    void process(choc::buffer::InterleavedView<float> buffer) override {
+    void process(choc::buffer::InterleavedView<float>& buffer) override {
         auto numFrames = buffer.getNumFrames();
         auto numChannels = buffer.getNumChannels();
 
