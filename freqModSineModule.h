@@ -25,11 +25,11 @@ private:
 
         // Smoothers for this voice
         SmoothedValue<float> s_base_freq;
-        SmoothedValue<float> s_velocity;  // For click-free voice stealing
+        SmoothedValue<float> s_velocity;
 
         Voice(float sample_rate) : envelope(sample_rate) {
-            s_base_freq.reset(sample_rate, 0.005);  // Fast freq changes
-            s_velocity.reset(sample_rate, 0.002);   // Very fast velocity ramps for stealing
+            s_base_freq.reset(sample_rate, 0.005); // Fast freq changes
+            s_velocity.reset(sample_rate, 0.005);  // Smooth velocity changes
             s_base_freq.setValue(440.0f);
             s_velocity.setValue(0.0f);
         }
@@ -41,38 +41,22 @@ private:
 
             s_base_freq.setTargetValue(midi_note_to_freq(note));
             s_velocity.setTargetValue(vel);
-            envelope.noteOn();
+            envelope.noteOn(); // This is key: always retrigger the envelope
         }
 
         void noteOff() {
+            // A note off for a voice that is not active can happen
+            // if it was stolen. In that case, we just ignore it.
+            if (!isActive) return;
+
             isActive = false;
             envelope.noteOff();
-            // Don't immediately set velocity to 0 - let envelope handle the fade
+            // Don't set velocity to 0. The envelope release stage handles the fade-out.
+            // s_velocity smoother will just hold the last value, which is fine.
         }
 
-        void steal(uint8_t newNote, float newVel) {
-            // For voice stealing: quickly fade out, change note, fade back in
-            midiNote = newNote;
-            velocity = newVel;
-
-            // Quick fade to near-zero, then to new velocity
-            s_velocity.setTargetValue(0.001f);  // Very quiet but not silent
-            s_base_freq.setTargetValue(midi_note_to_freq(newNote));
-
-            // The velocity will ramp back up after a few samples
-            // We'll handle this in the process loop
-        }
-
-        bool shouldRampBackUp() const {
-            // Return true when velocity has ramped down enough for clean transition
-            return s_velocity.getCurrentValue() < 0.01f && !s_velocity.isSmoothing();
-        }
-
-        void completeSteal() {
-            // Now ramp back up to full velocity and retrigger envelope
-            s_velocity.setTargetValue(velocity);
-            envelope.noteOn();  // Retrigger envelope
-        }
+        // <<< CHANGED: The complex steal(), shouldRampBackUp(), and completeSteal() methods have been removed.
+        // The noteOn() method is now used for both new notes and stolen notes.
 
         static float midi_note_to_freq(uint8_t note) {
             return 440.0f * powf(2.0f, (note - 69.0f) / 12.0f);
@@ -109,22 +93,14 @@ public:
         s_sustain.setValue(p_sustain->getValue());
         s_release.setValue(p_release->getValue());
         s_master_vol.setValue(p_master_vol->getValue());
+
+        p_last_note_on_voice = &voice2; // Initialize to avoid stealing voice1 first
     }
 
     void process(choc::buffer::InterleavedView<float>& buffer) override {
-        // --- 1. Handle incoming MIDI and Parameter changes ---
         update_control_signals();
 
-        // --- 2. Generate audio from both voices ---
         auto numFrames = buffer.getNumFrames();
-        auto numChannels = buffer.getNumChannels();
-
-        // Clear buffer first
-        for (uint32_t ch = 0; ch < numChannels; ++ch) {
-            for (uint32_t f = 0; f < numFrames; ++f) {
-                buffer.getSample(ch, f) = 0.0f;
-            }
-        }
 
         for (uint32_t f = 0; f < numFrames; ++f) {
             // Get global smoothed values per sample
@@ -134,29 +110,26 @@ public:
 
             float mixedSample = 0.0f;
 
-            // Process voice 1
-            if (voice1.envelope.isActive() || voice1.s_velocity.getCurrentValue() > 0.001f) {
-                mixedSample += processVoice(voice1, current_mod_index, current_harmonicity, current_master_vol);
+            // A voice is audible if its envelope is still active.
+            if (voice1.envelope.isActive()) {
+                mixedSample += processVoice(voice1, current_mod_index, current_harmonicity);
             }
 
-            // Process voice 2
-            if (voice2.envelope.isActive() || voice2.s_velocity.getCurrentValue() > 0.001f) {
-                mixedSample += processVoice(voice2, current_mod_index, current_harmonicity, current_master_vol);
+            if (voice2.envelope.isActive()) {
+                mixedSample += processVoice(voice2, current_mod_index, current_harmonicity);
             }
 
-            // Apply to all channels
-            for (uint32_t ch = 0; ch < numChannels; ++ch) {
-                buffer.getSample(ch, f) = mixedSample * 0.5f; // Mix level for 2 voices
+            // Apply master volume and mix level to all channels
+            float finalSample = mixedSample * 0.5f * current_master_vol;
+            for (uint32_t ch = 0; ch < buffer.getNumChannels(); ++ch) {
+                buffer.getSample(ch, f) = finalSample;
             }
         }
     }
 
 private:
-    float processVoice(Voice& voice, float mod_index, float harmonicity, float master_vol) {
-        // Handle voice stealing state machine
-        if (voice.shouldRampBackUp() && voice.isActive) {
-            voice.completeSteal();
-        }
+    float processVoice(Voice& voice, float mod_index, float harmonicity) {
+        // <<< CHANGED: Removed the voice stealing state machine check. It's no longer needed.
 
         // Get voice-specific smoothed values
         float current_base_freq = voice.s_base_freq.getNextValue();
@@ -164,49 +137,42 @@ private:
 
         // Update modulator frequency
         voice.modulator.setFrequency(current_base_freq * harmonicity, sampleRate);
-
-        // Generate modulator sample
         float mod_sample = voice.modulator.getSample();
 
         // Calculate carrier phase increment
         float carrier_phase_inc = two_pi * current_base_freq / sampleRate;
-
-        // Generate FM synthesis output
         float out = sin(voice.carrier_phase + (mod_index * mod_sample));
-
         voice.carrier_phase += carrier_phase_inc;
         if (voice.carrier_phase >= two_pi) voice.carrier_phase -= two_pi;
 
-        // Apply velocity and master volume
-        float sample = out * current_velocity * master_vol;
+        // Apply velocity (which scales the envelope's peak)
+        float sample = out * current_velocity;
 
-        // Create a temporary buffer for this voice's envelope
+        // Create a temporary buffer for this voice's envelope processing
         choc::buffer::InterleavedBuffer<float> voiceBuffer(1, 1);
         voiceBuffer.getSample(0, 0) = sample;
         auto voiceView = voiceBuffer.getView();
 
-        // Apply envelope
+        // The envelope acts as the final VCA
         voice.envelope.process(voiceView);
 
         return voiceBuffer.getSample(0, 0);
     }
 
     void update_control_signals() {
-        // Handle MIDI Note On/Off from the FIFO queue
         while (multicore_fifo_rvalid()) {
             uint32_t packet = multicore_fifo_pop_blocking();
             uint8_t command = (packet >> 24) & 0xFF;
             uint8_t data1   = (packet >> 16) & 0xFF;
             uint8_t data2   = (packet >> 8)  & 0xFF;
 
-            if (command == 0x90) { // NOTE_ON
+            if (command == 0x90 && data2 > 0) { // Note On
                 handleNoteOn(data1, data2 / 127.0f);
-            } else if (command == 0x80) { // NOTE_OFF
+            } else if (command == 0x80 || (command == 0x90 && data2 == 0)) { // Note Off
                 handleNoteOff(data1);
             }
         }
 
-        // Update global parameter smoothers
         s_mod_index.setTargetValue(p_mod_index->getValue());
         s_harmonicity.setTargetValue(p_harmonicity->getValue());
         s_attack.setTargetValue(p_attack->getValue());
@@ -215,7 +181,6 @@ private:
         s_release.setTargetValue(p_release->getValue());
         s_master_vol.setTargetValue(p_master_vol->getValue());
 
-        // Apply envelope settings to both voices
         float attack = s_attack.getNextValue();
         float decay = s_decay.getNextValue();
         float sustain = s_sustain.getNextValue();
@@ -233,30 +198,30 @@ private:
     }
 
     void handleNoteOn(uint8_t note, float velocity) {
-        // Voice allocation strategy:
-        // 1. Use free voice if available
-        // 2. Steal oldest voice if both are active
-
-        if (!voice1.isActive) {
+        // Voice allocation: Find a free voice, or steal the oldest one.
+        // A voice is "free" if its envelope has finished its release phase.
+        if (!voice1.envelope.isActive()) {
             voice1.noteOn(note, velocity);
-            p_last_note_on_voice = &voice1; // Track that voice1 was the last one used
-        } else if (!voice2.isActive) {
+            p_last_note_on_voice = &voice1;
+        } else if (!voice2.envelope.isActive()) {
             voice2.noteOn(note, velocity);
-            p_last_note_on_voice = &voice2; // Track that voice1 was the last one used
+            p_last_note_on_voice = &voice2;
         } else {
+            // Both voices are active, so steal the one that wasn't played last.
             if (p_last_note_on_voice == &voice1) {
-                // voice1 was played last, so voice2 is the older one. Steal it.
-                voice2.steal(note, velocity);
-                p_last_note_on_voice = &voice2; // Now voice2 is the newest
+                // voice1 was played last, so steal voice2.
+                voice2.noteOn(note, velocity); // <<< CHANGED: Just call noteOn()
+                p_last_note_on_voice = &voice2;
             } else {
-                // voice2 was played last, so voice1 is the older one. Steal it.
-                voice1.steal(note, velocity);
-                p_last_note_on_voice = &voice1; // Now voice1 is the newest
+                // voice2 was played last, so steal voice1.
+                voice1.noteOn(note, velocity); // <<< CHANGED: Just call noteOn()
+                p_last_note_on_voice = &voice1;
             }
         }
     }
 
     void handleNoteOff(uint8_t note) {
+        // The noteOff message should apply to the voice currently playing that note.
         if (voice1.isActive && voice1.midiNote == note) {
             voice1.noteOff();
         }
@@ -267,7 +232,7 @@ private:
 
     // Voices
     Voice voice1, voice2;
-    Voice* p_last_note_on_voice = &voice1; // <<< CHANGED: Pointer to the most recently used voice.
+    Voice* p_last_note_on_voice;
 
     float sampleRate;
     const float two_pi = 6.283185307179586f;

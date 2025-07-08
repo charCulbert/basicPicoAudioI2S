@@ -13,11 +13,11 @@ inline void initialize_parameters() {
     g_synth_parameters.clear();
 
     // Create all the parameters for our synth
-    g_synth_parameters.push_back(new Parameter("modIndex",    "Mod Index",    0.0f,   10.0f,  2.0f,   1));
-    g_synth_parameters.push_back(new Parameter("harmonicity", "Harmonicity",  0.5f,   10.0f,   0.8f,   10));
-    g_synth_parameters.push_back(new Parameter("attack",      "Attack",       0.001f, 1.5f,   0.05f,  74));
-    g_synth_parameters.push_back(new Parameter("decay",       "Decay",        0.001f, 3.0f,   0.07f,   71));
-    g_synth_parameters.push_back(new Parameter("sustain",     "Sustain",      0.0f,   1.0f,   0.35f,   73));
-    g_synth_parameters.push_back(new Parameter("release",     "Release",      0.01f,  5.0f,   0.2f,   72));
-    g_synth_parameters.push_back(new Parameter("masterVol",   "Master Volume",0.0f,   1.0f,   0.08f,   75));
+    g_synth_parameters.push_back(new Parameter("modIndex",    "Mod Index",    0.0f,   10.0f,  0.15f,   1));
+    g_synth_parameters.push_back(new Parameter("harmonicity", "Harmonicity",  0.2f,   10.0f,   2.8f,   10));
+    g_synth_parameters.push_back(new Parameter("attack",      "Attack",       0.001f, 2.5f,   1.8f,  74));
+    g_synth_parameters.push_back(new Parameter("decay",       "Decay",        0.003f, 2.0f,   0.5f,   71));
+    g_synth_parameters.push_back(new Parameter("sustain",     "Sustain",      0.0f,   1.0f,   0.45f,   73));
+    g_synth_parameters.push_back(new Parameter("release",     "Release",      0.01f,  5.0f,   1.0f,   72));
+    g_synth_parameters.push_back(new Parameter("masterVol",   "Master Volume",0.0f,   0.5f,   0.08f,   75));
 }
