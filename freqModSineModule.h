@@ -8,10 +8,16 @@
 #include "choc/audio/choc_SampleBuffers.h"
 #include "pico/multicore.h"
 #include <cmath>
-#include <array>
+#include <vector> // <<< CHANGED: Include vector for our voices collection
+// <<< NEW: Include the reverb module so we can use it inside this class
+#include "SimpleReverbModule.h"
 
-class DuophonicFMModule : public AudioModule {
+// <<< CHANGED: Renamed class from DuophonicFMModule to PolyphonicFMModule
+class PolyphonicFMModule : public AudioModule {
 private:
+    // <<< NEW: A constant for the number of voices makes it easy to change.
+    static constexpr int NUM_VOICES = 4;
+
     struct Voice {
         // DSP objects
         choc::oscillator::Sine<float> modulator;
@@ -41,22 +47,14 @@ private:
 
             s_base_freq.setTargetValue(midi_note_to_freq(note));
             s_velocity.setTargetValue(vel);
-            envelope.noteOn(); // This is key: always retrigger the envelope
+            envelope.noteOn();
         }
 
         void noteOff() {
-            // A note off for a voice that is not active can happen
-            // if it was stolen. In that case, we just ignore it.
             if (!isActive) return;
-
             isActive = false;
             envelope.noteOff();
-            // Don't set velocity to 0. The envelope release stage handles the fade-out.
-            // s_velocity smoother will just hold the last value, which is fine.
         }
-
-        // <<< CHANGED: The complex steal(), shouldRampBackUp(), and completeSteal() methods have been removed.
-        // The noteOn() method is now used for both new notes and stolen notes.
 
         static float midi_note_to_freq(uint8_t note) {
             return 440.0f * powf(2.0f, (note - 69.0f) / 12.0f);
@@ -64,7 +62,16 @@ private:
     };
 
 public:
-    DuophonicFMModule(float sample_rate) : sampleRate(sample_rate), voice1(sample_rate), voice2(sample_rate) {
+    PolyphonicFMModule(float sample_rate)
+    : sampleRate(sample_rate),
+      reverb(sample_rate) // <<< NEW: Initialize the reverb member
+{
+        // <<< CHANGED: Initialize the vector of voices
+        voices.reserve(NUM_VOICES);
+        for (int i = 0; i < NUM_VOICES; ++i) {
+            voices.emplace_back(sample_rate);
+        }
+
         // Find our parameters by their string ID from the global store.
         for (auto* p : g_synth_parameters) {
             if (p->getID() == "modIndex")    p_mod_index = p;
@@ -93,8 +100,6 @@ public:
         s_sustain.setValue(p_sustain->getValue());
         s_release.setValue(p_release->getValue());
         s_master_vol.setValue(p_master_vol->getValue());
-
-        p_last_note_on_voice = &voice2; // Initialize to avoid stealing voice1 first
     }
 
     void process(choc::buffer::InterleavedView<float>& buffer) override {
@@ -103,57 +108,48 @@ public:
         auto numFrames = buffer.getNumFrames();
 
         for (uint32_t f = 0; f < numFrames; ++f) {
-            // Get global smoothed values per sample
             float current_mod_index = s_mod_index.getNextValue();
             float current_harmonicity = s_harmonicity.getNextValue();
             float current_master_vol = s_master_vol.getNextValue();
 
             float mixedSample = 0.0f;
 
-            // A voice is audible if its envelope is still active.
-            if (voice1.envelope.isActive()) {
-                mixedSample += processVoice(voice1, current_mod_index, current_harmonicity);
+            // <<< CHANGED: Loop through all voices and mix their output
+            for (auto& voice : voices) {
+                if (voice.envelope.isActive()) {
+                    mixedSample += processVoice(voice, current_mod_index, current_harmonicity);
+                }
             }
 
-            if (voice2.envelope.isActive()) {
-                mixedSample += processVoice(voice2, current_mod_index, current_harmonicity);
-            }
-
-            // Apply master volume and mix level to all channels
-            float finalSample = mixedSample * 0.5f * current_master_vol;
+            // <<< CHANGED: Mix level adjusted for 4 voices to prevent clipping.
+            float finalSample = mixedSample * (1.0f / NUM_VOICES) * current_master_vol;
             for (uint32_t ch = 0; ch < buffer.getNumChannels(); ++ch) {
                 buffer.getSample(ch, f) = finalSample;
             }
         }
+        // <<< NEW: Process the entire buffer (which now contains the dry mix)
+        // through our reverb module. The reverb will mix in the wet signal.
+        reverb.process(buffer);
     }
 
 private:
     float processVoice(Voice& voice, float mod_index, float harmonicity) {
-        // <<< CHANGED: Removed the voice stealing state machine check. It's no longer needed.
-
-        // Get voice-specific smoothed values
         float current_base_freq = voice.s_base_freq.getNextValue();
         float current_velocity = voice.s_velocity.getNextValue();
 
-        // Update modulator frequency
         voice.modulator.setFrequency(current_base_freq * harmonicity, sampleRate);
         float mod_sample = voice.modulator.getSample();
 
-        // Calculate carrier phase increment
         float carrier_phase_inc = two_pi * current_base_freq / sampleRate;
         float out = sin(voice.carrier_phase + (mod_index * mod_sample));
         voice.carrier_phase += carrier_phase_inc;
         if (voice.carrier_phase >= two_pi) voice.carrier_phase -= two_pi;
 
-        // Apply velocity (which scales the envelope's peak)
         float sample = out * current_velocity;
 
-        // Create a temporary buffer for this voice's envelope processing
         choc::buffer::InterleavedBuffer<float> voiceBuffer(1, 1);
         voiceBuffer.getSample(0, 0) = sample;
         auto voiceView = voiceBuffer.getView();
-
-        // The envelope acts as the final VCA
         voice.envelope.process(voiceView);
 
         return voiceBuffer.getSample(0, 0);
@@ -166,9 +162,9 @@ private:
             uint8_t data1   = (packet >> 16) & 0xFF;
             uint8_t data2   = (packet >> 8)  & 0xFF;
 
-            if (command == 0x90 && data2 > 0) { // Note On
+            if (command == 0x90 && data2 > 0) {
                 handleNoteOn(data1, data2 / 127.0f);
-            } else if (command == 0x80 || (command == 0x90 && data2 == 0)) { // Note Off
+            } else if (command == 0x80 || (command == 0x90 && data2 == 0)) {
                 handleNoteOff(data1);
             }
         }
@@ -186,53 +182,45 @@ private:
         float sustain = s_sustain.getNextValue();
         float release = s_release.getNextValue();
 
-        voice1.envelope.setAttackTime(attack);
-        voice1.envelope.setDecayTime(decay);
-        voice1.envelope.setSustainLevel(sustain);
-        voice1.envelope.setReleaseTime(release);
-
-        voice2.envelope.setAttackTime(attack);
-        voice2.envelope.setDecayTime(decay);
-        voice2.envelope.setSustainLevel(sustain);
-        voice2.envelope.setReleaseTime(release);
+        // <<< CHANGED: Loop to update all voice envelopes at once
+        for (auto& voice : voices) {
+            voice.envelope.setAttackTime(attack);
+            voice.envelope.setDecayTime(decay);
+            voice.envelope.setSustainLevel(sustain);
+            voice.envelope.setReleaseTime(release);
+        }
     }
 
     void handleNoteOn(uint8_t note, float velocity) {
-        // Voice allocation: Find a free voice, or steal the oldest one.
-        // A voice is "free" if its envelope has finished its release phase.
-        if (!voice1.envelope.isActive()) {
-            voice1.noteOn(note, velocity);
-            p_last_note_on_voice = &voice1;
-        } else if (!voice2.envelope.isActive()) {
-            voice2.noteOn(note, velocity);
-            p_last_note_on_voice = &voice2;
-        } else {
-            // Both voices are active, so steal the one that wasn't played last.
-            if (p_last_note_on_voice == &voice1) {
-                // voice1 was played last, so steal voice2.
-                voice2.noteOn(note, velocity); // <<< CHANGED: Just call noteOn()
-                p_last_note_on_voice = &voice2;
-            } else {
-                // voice2 was played last, so steal voice1.
-                voice1.noteOn(note, velocity); // <<< CHANGED: Just call noteOn()
-                p_last_note_on_voice = &voice1;
+        // <<< CHANGED: New voice allocation logic for N voices.
+        // 1. Find the first available (inactive) voice.
+        for (auto& voice : voices) {
+            if (!voice.envelope.isActive()) {
+                voice.noteOn(note, velocity);
+                return; // Found a free voice, we're done.
+            }
+        }
+
+        // 2. If all voices are busy, steal one using a round-robin scheme.
+        // This is a simple and effective voice-stealing algorithm.
+        voices[next_voice_to_steal].noteOn(note, velocity);
+        next_voice_to_steal = (next_voice_to_steal + 1) % NUM_VOICES;
+    }
+
+    void handleNoteOff(uint8_t note) {
+        // <<< CHANGED: Loop through all voices to find the one playing this note.
+        for (auto& voice : voices) {
+            if (voice.isActive && voice.midiNote == note) {
+                voice.noteOff();
+                return; // A note should only be active on one voice at a time.
             }
         }
     }
 
-    void handleNoteOff(uint8_t note) {
-        // The noteOff message should apply to the voice currently playing that note.
-        if (voice1.isActive && voice1.midiNote == note) {
-            voice1.noteOff();
-        }
-        if (voice2.isActive && voice2.midiNote == note) {
-            voice2.noteOff();
-        }
-    }
-
-    // Voices
-    Voice voice1, voice2;
-    Voice* p_last_note_on_voice;
+    // <<< CHANGED: Voice members are now a vector.
+    std::vector<Voice> voices;
+    // <<< NEW: Index for round-robin voice stealing.
+    size_t next_voice_to_steal = 0;
 
     float sampleRate;
     const float two_pi = 6.283185307179586f;
@@ -242,4 +230,6 @@ private:
 
     // Global smoothers for shared parameters
     SmoothedValue<float> s_mod_index, s_harmonicity, s_attack, s_decay, s_sustain, s_release, s_master_vol;
+
+    SimpleReverbModule reverb;
 };

@@ -28,7 +28,7 @@
 class I2sAudioOutput {
 public:
     // --- Core Audio Configuration ---
-    static constexpr int SAMPLE_RATE = 22050;
+    static constexpr int SAMPLE_RATE = 44100;
     static constexpr int BUFFER_SIZE = 128; // Number of L/R sample pairs per buffer
     static constexpr int NUM_CHANNELS = 2;     // Stereo
 

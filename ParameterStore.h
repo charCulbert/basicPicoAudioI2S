@@ -1,23 +1,27 @@
-#pragma once
-#include <vector>
-#include "Parameter.h"
+    #pragma once
+    #include <vector>
+    #include "Parameter.h"
 
-// A single, global list containing all synth parameters.
-// This is the "single source of truth".
-inline std::vector<Parameter*> g_synth_parameters;
+    // A single, global list containing all synth parameters.
+    // This is the "single source of truth".
+    inline std::vector<Parameter*> g_synth_parameters;
 
-// A helper function to create all our parameters in one place.
-inline void initialize_parameters() {
-    // Clear any previous parameters to be safe
-    for (auto* p : g_synth_parameters) delete p;
-    g_synth_parameters.clear();
+    // A helper function to create all our parameters in one place.
+    inline void initialize_parameters() {
+        // Clear any previous parameters to be safe
+        for (auto* p : g_synth_parameters) delete p;
+        g_synth_parameters.clear();
 
-    // Create all the parameters for our synth
-    g_synth_parameters.push_back(new Parameter("modIndex",    "Mod Index",    0.0f,   10.0f,  0.15f,   1));
-    g_synth_parameters.push_back(new Parameter("harmonicity", "Harmonicity",  0.2f,   10.0f,   2.8f,   10));
-    g_synth_parameters.push_back(new Parameter("attack",      "Attack",       0.001f, 2.5f,   1.8f,  74));
-    g_synth_parameters.push_back(new Parameter("decay",       "Decay",        0.003f, 2.0f,   0.5f,   71));
-    g_synth_parameters.push_back(new Parameter("sustain",     "Sustain",      0.0f,   1.0f,   0.45f,   73));
-    g_synth_parameters.push_back(new Parameter("release",     "Release",      0.01f,  5.0f,   1.0f,   72));
-    g_synth_parameters.push_back(new Parameter("masterVol",   "Master Volume",0.0f,   0.5f,   0.08f,   75));
-}
+        // Create all the parameters for our synth
+        g_synth_parameters.push_back(new Parameter("modIndex",    "Mod Index",    0.0f,   10.0f,  0.15f,   1));
+        g_synth_parameters.push_back(new Parameter("harmonicity", "Harmonicity",  0.2f,   10.0f,   2.8f,   10));
+        g_synth_parameters.push_back(new Parameter("attack",      "Attack",       0.001f, 2.5f,   0.01f,  74));
+        g_synth_parameters.push_back(new Parameter("decay",       "Decay",        0.003f, 2.0f,   0.5f,   71));
+        g_synth_parameters.push_back(new Parameter("sustain",     "Sustain",      0.0f,   1.0f,   0.45f,   73));
+        g_synth_parameters.push_back(new Parameter("release",     "Release",      0.01f,  5.0f,   1.0f,   72));
+        g_synth_parameters.push_back(new Parameter("masterVol",   "Master Volume",0.0f,   0.5f,   0.08f,   75));
+// REVERB
+        g_synth_parameters.push_back(new Parameter("reverbSize",  "Reverb Size",   0.6f,   0.995f, 0.8f,  91));
+        g_synth_parameters.push_back(new Parameter("reverbDamp",  "Reverb Damp",   0.05f,  0.6f,   0.4f,   92));
+        g_synth_parameters.push_back(new Parameter("reverbMix",   "Reverb Mix",    0.0f,   1.0f,   0.45f,   93));
+    }

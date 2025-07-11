@@ -13,6 +13,7 @@
 // --- Synth-Specific Module Headers ---
 #include "freqModSineModule.h" // Our all-in-one synth voice
 
+
 //==============================================================================
 // Core 1: The Audio Thread
 //==============================================================================
@@ -24,7 +25,7 @@ void main_core1() {
     static AudioEngine engine(ActiveAudioOutput::NUM_CHANNELS, ActiveAudioOutput::BUFFER_SIZE);
 
     // 2. Create the "smart" synth voice module. It handles everything.
-    DuophonicFMModule synth_voice(ActiveAudioOutput::SAMPLE_RATE);
+    PolyphonicFMModule synth_voice(ActiveAudioOutput::SAMPLE_RATE);
 
     // 3. Add the single synth voice to the engine.
     engine.addModule(&synth_voice);
