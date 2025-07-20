@@ -4,7 +4,6 @@
 #include "hardware/vreg.h"
 // --- Core Application Headers ---
 #include "ParameterStore.h"
-#include "MidiSerialListener.h"
 #include "RotaryEncoderListener.h"
 #include "AudioEngine.h"
 #include "I2sAudioOutput.h"
@@ -56,7 +55,8 @@ int main() {
     // IMPORTANT: Initialize the global parameter store BEFORE launching Core 1
     initialize_parameters();
 
-    sleep_ms(2000);
+    sleep_ms(2000);#include "MidiSerialListener.h"
+
     printf("LOG:--- Pico Synth (Integrated Voice) Initialized ---\n");
     printf("LOG: System clock is running at %lu kHz\n", clock_get_hz(clk_sys) / 1000);
     // Launch the audio engine on the second core
