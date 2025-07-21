@@ -48,7 +48,7 @@
 class Fix15VCAEnvelopeModule : public AudioModule {
 public:
     // Envelope state machine phases
-    enum class State { Idle, Attack, Decay, Sustain, Release };
+    enum class State { Idle, Attack, Decay, Sustain, Release, StealFade };
 
     Fix15VCAEnvelopeModule(float sampleRate) : sampleRate(sampleRate) {
         s_sustainLevel.reset(sampleRate, 0.01); // 10ms smoothing for sustain changes
@@ -64,13 +64,25 @@ public:
         s_decaySamples.setValue(decaySamples);
         s_releaseSamples.setValue(releaseSamples);
         
+        // StealFade timing: very short (5ms) to minimize delay but prevent clicks
+        stealFadeTimeSeconds = 0.005f;
+        stealFadeSamples = (uint32_t)(stealFadeTimeSeconds * sampleRate);
+        
         updateSampleCounts();
     }
 
     void noteOn() {
-        currentLevel = FIX15_ZERO;
-        state = State::Attack;
-        sampleCounter = 0;
+        if (currentLevel > FIX15_ZERO) {
+            // Voice is being stolen - fade down quickly first
+            state = State::StealFade;
+            stealFadeStartLevel = currentLevel;
+            sampleCounter = 0;
+        } else {
+            // Voice is free - start attack immediately
+            currentLevel = FIX15_ZERO;
+            state = State::Attack;
+            sampleCounter = 0;
+        }
     }
 
     void noteOff() {
@@ -141,6 +153,31 @@ public:
         uint32_t currentReleaseSamples = s_releaseSamples.getNextValue();
 
         switch (state) {
+            case State::StealFade:
+                if (stealFadeSamples > 0) {
+                    // Use 32-bit sample counting with floating-point progress calculation
+                    float progress = (float)sampleCounter / (float)stealFadeSamples;
+                    progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
+                    float stealStartFloat = fix152float(stealFadeStartLevel);
+                    // Fade from start level to 0
+                    float levelFloat = stealStartFloat * (1.0f - progress);
+                    currentLevel = float2fix15(levelFloat);
+                    
+                    sampleCounter++;
+                    if (sampleCounter >= stealFadeSamples) {
+                        // Fade complete, start attack for new note
+                        currentLevel = FIX15_ZERO;
+                        state = State::Attack;
+                        sampleCounter = 0;
+                    }
+                } else {
+                    // Instant steal (shouldn't happen with 5ms fade)
+                    currentLevel = FIX15_ZERO;
+                    state = State::Attack;
+                    sampleCounter = 0;
+                }
+                break;
+                
             case State::Attack:
                 if (currentAttackSamples > 0) {
                     // Use 32-bit sample counting with floating-point progress calculation
@@ -248,6 +285,11 @@ private:
     uint32_t decaySamples = 8820;      // 0.2s at 44.1kHz  
     uint32_t releaseSamples = 22050;   // 0.5s at 44.1kHz
     fix15 releaseStartLevel = FIX15_ZERO; // Level when release started
+    
+    // Voice stealing fade parameters
+    float stealFadeTimeSeconds = 0.005f;  // 5ms steal fade
+    uint32_t stealFadeSamples = 220;       // 0.005s at 44.1kHz
+    fix15 stealFadeStartLevel = FIX15_ZERO; // Level when steal fade started
     
     float attackTimeSeconds = 0.01f;
     float decayTimeSeconds = 0.2f;

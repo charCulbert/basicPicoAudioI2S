@@ -43,7 +43,7 @@
 class SimpleFixedOscModule : public AudioModule {
 private:
     // Number of polyphonic voices
-    static constexpr int NUM_VOICES = 8;
+    static constexpr int NUM_VOICES = 3;
     
     struct Voice {
         // DSP objects per voice
@@ -54,13 +54,18 @@ private:
         uint8_t midiNote = 0;
         bool isActive = false;
         fix15 velocity = 0;
+        float currentFreq = 440.0f;  // Current frequency for smooth transitions
         
         // Per-voice smoothers
         Fix15SmoothedValue s_velocity;
+        SmoothedValue<float> s_frequency;  // Smooth frequency changes during voice stealing
         
         Voice(float sample_rate) : envelope(sample_rate) {
-            s_velocity.reset(sample_rate, 0.005);  // Fast velocity changes
+            s_velocity.reset(sample_rate, 0.005);  // Fast velocity changes (5ms)
+            s_frequency.reset(sample_rate, 0.005); // Fast frequency changes (5ms) 
             s_velocity.setValue(0);
+            s_frequency.setValue(440.0f);
+            currentFreq = 440.0f;
         }
         
         void noteOn(uint8_t note, fix15 vel, float sample_rate) {
@@ -68,8 +73,10 @@ private:
             isActive = true;
             velocity = vel;
             
+            // Set new frequency target (will smooth if voice is being stolen)
             float freq = midiNoteToFreq(note);
-            oscillator.setFrequency(freq, sample_rate);
+            currentFreq = freq;
+            s_frequency.setTargetValue(freq);
             s_velocity.setTargetValue(vel);
             envelope.noteOn();
         }
@@ -182,8 +189,15 @@ public:
 
 private:
     fix15 processVoice(Voice& voice) {
-        // Get smoothed velocity value
+        // Get smoothed values
         fix15 current_velocity = voice.s_velocity.getNextValue();
+        float smooth_frequency = voice.s_frequency.getNextValue();
+        
+        // Update oscillator frequency if it changed (smooth frequency transitions)
+        if (smooth_frequency != voice.currentFreq) {
+            voice.oscillator.setFrequency(smooth_frequency, sampleRate);
+            voice.currentFreq = smooth_frequency;
+        }
         
         // Get envelope value
         fix15 env_level = voice.envelope.getNextValue();
