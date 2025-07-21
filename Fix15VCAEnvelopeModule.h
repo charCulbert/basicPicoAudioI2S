@@ -73,12 +73,13 @@ public:
 
     void noteOn() {
         if (currentLevel > FIX15_ZERO) {
-            // Voice is being stolen - fade down quickly first
+            // FIXED: Always use StealFade when current level > 0 to prevent clicks
+            // This includes voices in Release state - they need to fade to zero first
             state = State::StealFade;
             stealFadeStartLevel = currentLevel;
             sampleCounter = 0;
         } else {
-            // Voice is free - start attack immediately
+            // Voice is free (Idle with level = 0) - start attack immediately
             currentLevel = FIX15_ZERO;
             state = State::Attack;
             sampleCounter = 0;
@@ -130,7 +131,8 @@ public:
         auto numChannels = buffer.getNumChannels();
 
         if (state == State::Idle && currentLevel == FIX15_ZERO) {
-            choc::buffer::applyGain(buffer, 0.0f);
+            // OPTIMIZED: Use fixed-point zero instead of float applyGain
+            buffer.clear();
             return;
         }
 
@@ -155,13 +157,18 @@ public:
         switch (state) {
             case State::StealFade:
                 if (stealFadeSamples > 0) {
-                    // Use 32-bit sample counting with floating-point progress calculation
-                    float progress = (float)sampleCounter / (float)stealFadeSamples;
-                    progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
-                    float stealStartFloat = fix152float(stealFadeStartLevel);
-                    // Fade from start level to 0
-                    float levelFloat = stealStartFloat * (1.0f - progress);
-                    currentLevel = float2fix15(levelFloat);
+                    // OVERFLOW FIX: Use 32-bit division to handle large sample counts
+                    fix15 progress;
+                    if (sampleCounter >= stealFadeSamples) {
+                        progress = FIX15_ONE;
+                    } else {
+                        // Use 64-bit arithmetic for consistency (though overflow unlikely with 5ms fade)
+                        progress = (fix15)((uint64_t)sampleCounter * 32768 / stealFadeSamples);
+                    }
+                    
+                    // Fade from start level to 0: level = startLevel * (1.0 - progress)
+                    fix15 fade_factor = FIX15_ONE - progress;
+                    currentLevel = multfix15(stealFadeStartLevel, fade_factor);
                     
                     sampleCounter++;
                     if (sampleCounter >= stealFadeSamples) {
@@ -180,19 +187,25 @@ public:
                 
             case State::Attack:
                 if (currentAttackSamples > 0) {
-                    // Calculate progress and handle parameter changes smoothly
-                    float progress = (float)sampleCounter / (float)currentAttackSamples;
-                    
-                    // If parameter change causes us to overshoot, adjust sample counter
-                    if (progress > 1.0f) {
-                        // Preserve current level and adjust counter to maintain continuity
-                        float currentLevelFloat = fix152float(currentLevel);
-                        sampleCounter = (uint32_t)(currentLevelFloat * currentAttackSamples);
-                        progress = currentLevelFloat;
+                    // OVERFLOW FIX: Use 32-bit division to handle large sample counts
+                    fix15 progress;
+                    if (sampleCounter >= currentAttackSamples) {
+                        progress = FIX15_ONE;
+                    } else {
+                        // OVERFLOW FIX: Use 64-bit arithmetic to prevent overflow with large sample counts
+                        progress = (fix15)((uint64_t)sampleCounter * 32768 / currentAttackSamples);
                     }
                     
-                    progress = std::min(progress, 1.0f); // Final clamp
-                    currentLevel = float2fix15(progress);
+                    // SMOOTH PARAMETER CHANGES: When timing changes, preserve current level
+                    if (progress > FIX15_ONE) {
+                        // Parameter change caused overshoot - preserve current level and recalc counter
+                        if (currentLevel < FIX15_ONE) {
+                            // Recalculate sample counter based on current level to maintain continuity
+                            sampleCounter = (uint32_t)((uint64_t)currentLevel * currentAttackSamples >> 15);
+                        }
+                        progress = currentLevel; // Use current level instead of calculated progress
+                    }
+                    currentLevel = progress; // Direct assignment - no float conversion!
                     
                     sampleCounter++;
                     if (sampleCounter >= currentAttackSamples) {
@@ -210,25 +223,33 @@ public:
                 
             case State::Decay:
                 if (currentDecaySamples > 0) {
-                    // Calculate progress and handle parameter changes smoothly
-                    float progress = (float)sampleCounter / (float)currentDecaySamples;
-                    float sustainFloat = fix152float(sustainLevel);
-                    
-                    // If parameter change causes us to overshoot, adjust sample counter
-                    if (progress > 1.0f) {
-                        // Preserve current level and adjust counter to maintain continuity
-                        float currentLevelFloat = fix152float(currentLevel);
-                        // Reverse the decay calculation to find appropriate counter
-                        float reverseProgress = (1.0f - currentLevelFloat) / (1.0f - sustainFloat);
-                        reverseProgress = std::max(0.0f, std::min(reverseProgress, 1.0f));
-                        sampleCounter = (uint32_t)(reverseProgress * currentDecaySamples);
-                        progress = reverseProgress;
+                    // OVERFLOW FIX: Use 32-bit division to handle large sample counts
+                    fix15 progress;
+                    if (sampleCounter >= currentDecaySamples) {
+                        progress = FIX15_ONE;
+                    } else {
+                        // OVERFLOW FIX: Use 64-bit arithmetic to prevent overflow with large sample counts
+                        progress = (fix15)((uint64_t)sampleCounter * 32768 / currentDecaySamples);
                     }
                     
-                    progress = std::min(progress, 1.0f); // Final clamp
-                    // Interpolate from 1.0 down to sustain level
-                    float levelFloat = 1.0f - (progress * (1.0f - sustainFloat));
-                    currentLevel = float2fix15(levelFloat);
+                    // SMOOTH PARAMETER CHANGES: When timing changes, preserve current level
+                    if (progress > FIX15_ONE) {
+                        // Parameter change caused overshoot - preserve current level and recalc counter
+                        fix15 decay_range = FIX15_ONE - sustainLevel;
+                        if (decay_range > 0 && currentLevel > sustainLevel && currentLevel <= FIX15_ONE) {
+                            // Reverse calculate where we should be: progress = (1.0 - currentLevel) / decay_range
+                            uint32_t reverse_progress = ((uint32_t)(FIX15_ONE - currentLevel) * 32768) / decay_range;
+                            if (reverse_progress <= 32768) {
+                                sampleCounter = (uint32_t)((uint64_t)reverse_progress * currentDecaySamples >> 15);
+                            }
+                        }
+                        // Don't recalculate level - just continue with current level
+                    } else {
+                        // Normal case - calculate new level from progress
+                        fix15 decay_range = FIX15_ONE - sustainLevel;
+                        fix15 decay_amount = multfix15(progress, decay_range);
+                        currentLevel = FIX15_ONE - decay_amount;
+                    }
                     
                     sampleCounter++;
                     if (sampleCounter >= currentDecaySamples) {
@@ -253,35 +274,45 @@ public:
                 
             case State::Release:
                 if (currentReleaseSamples > 0) {
-                    // Calculate progress and handle parameter changes smoothly
-                    float progress = (float)sampleCounter / (float)currentReleaseSamples;
-                    float releaseStartFloat = fix152float(releaseStartLevel);
-                    
-                    // If parameter change causes us to overshoot, adjust sample counter
-                    if (progress > 1.0f) {
-                        // Preserve current level and adjust counter to maintain continuity
-                        float currentLevelFloat = fix152float(currentLevel);
-                        // Reverse the release calculation to find appropriate counter
-                        float reverseProgress = 1.0f - (currentLevelFloat / releaseStartFloat);
-                        reverseProgress = std::max(0.0f, std::min(reverseProgress, 1.0f));
-                        sampleCounter = (uint32_t)(reverseProgress * currentReleaseSamples);
-                        progress = reverseProgress;
+                    // OVERFLOW FIX: Use 32-bit division to handle large sample counts
+                    fix15 progress;
+                    if (sampleCounter >= currentReleaseSamples) {
+                        progress = FIX15_ONE;
+                    } else {
+                        // OVERFLOW FIX: Use 64-bit arithmetic to prevent overflow with large sample counts
+                        progress = (fix15)((uint64_t)sampleCounter * 32768 / currentReleaseSamples);
                     }
                     
-                    progress = std::min(progress, 1.0f); // Final clamp
-                    // Interpolate from release start level down to 0
-                    float levelFloat = releaseStartFloat * (1.0f - progress);
-                    currentLevel = float2fix15(levelFloat);
+                    // SMOOTH PARAMETER CHANGES: When timing changes, preserve current level
+                    if (progress > FIX15_ONE) {
+                        // Parameter change caused overshoot - preserve current level and recalc counter
+                        if (releaseStartLevel > 0 && currentLevel >= 0 && currentLevel <= releaseStartLevel) {
+                            // Reverse calculate: progress = 1.0 - (currentLevel / releaseStartLevel)
+                            uint32_t level_ratio = ((uint32_t)currentLevel * 32768) / releaseStartLevel;
+                            if (level_ratio <= 32768) {
+                                uint32_t reverse_progress = 32768 - level_ratio;
+                                sampleCounter = (uint32_t)((uint64_t)reverse_progress * currentReleaseSamples >> 15);
+                            }
+                        }
+                        // Don't recalculate level - just continue with current level
+                    } else {
+                        // Normal case - calculate new level from progress
+                        fix15 fade_factor = FIX15_ONE - progress;
+                        currentLevel = multfix15(releaseStartLevel, fade_factor);
+                    }
                     
                     sampleCounter++;
                     if (sampleCounter >= currentReleaseSamples) {
+                        // FINAL FIX: Ensure clean transition to idle state
                         currentLevel = FIX15_ZERO;
                         state = State::Idle;
+                        sampleCounter = 0; // Reset counter to prevent any weirdness
                     }
                 } else {
                     // Instant release
                     currentLevel = FIX15_ZERO;
                     state = State::Idle;
+                    sampleCounter = 0; // Ensure clean state
                 }
                 break;
                 

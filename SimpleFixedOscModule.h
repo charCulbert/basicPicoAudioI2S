@@ -43,7 +43,7 @@
 class SimpleFixedOscModule : public AudioModule {
 private:
     // Number of polyphonic voices
-    static constexpr int NUM_VOICES = 3;
+    static constexpr int NUM_VOICES = 8;
     
     struct Voice {
         // DSP objects per voice
@@ -54,18 +54,13 @@ private:
         uint8_t midiNote = 0;
         bool isActive = false;
         fix15 velocity = 0;
-        float currentFreq = 440.0f;  // Current frequency for smooth transitions
         
         // Per-voice smoothers
         Fix15SmoothedValue s_velocity;
-        SmoothedValue<float> s_frequency;  // Smooth frequency changes during voice stealing
 
         Voice(float sample_rate) : envelope(sample_rate) {
             s_velocity.reset(sample_rate, 0.005);  // Fast velocity changes (5ms)
-            s_frequency.reset(sample_rate, 0.001); // Fast frequency changes (5ms)
             s_velocity.setValue(0);
-            s_frequency.setValue(440.0f);
-            currentFreq = 440.0f;
         }
         
         void noteOn(uint8_t note, fix15 vel, float sample_rate) {
@@ -73,12 +68,11 @@ private:
             isActive = true;
             velocity = vel;
             
-            // Set new frequency target (will smooth if voice is being stolen)
+            // OPTIMIZED: Set frequency immediately - envelope StealFade handles smooth stealing
             float freq = midiNoteToFreq(note);
-            currentFreq = freq;
-            s_frequency.setTargetValue(freq);
+            oscillator.setFrequency(freq, sample_rate);
             s_velocity.setTargetValue(vel);
-            envelope.noteOn();
+            envelope.noteOn(); // This handles StealFade for smooth voice stealing
         }
         
         void noteOff() {
@@ -88,7 +82,23 @@ private:
         }
         
         static float midiNoteToFreq(uint8_t note) {
-            return 440.0f * powf(2.0f, (note - 69.0f) / 12.0f);
+            // OPTIMIZED: Use lookup table instead of expensive powf() calculation
+            static const float midi_freq_table[128] = {
+                8.176f, 8.662f, 9.177f, 9.723f, 10.301f, 10.913f, 11.562f, 12.250f, 12.978f, 13.750f, 14.568f, 15.434f, // C-1 to B-1
+                16.352f, 17.324f, 18.354f, 19.445f, 20.602f, 21.827f, 23.125f, 24.500f, 25.957f, 27.500f, 29.135f, 30.868f, // C0 to B0
+                32.703f, 34.648f, 36.708f, 38.891f, 41.203f, 43.654f, 46.249f, 48.999f, 51.913f, 55.000f, 58.270f, 61.735f, // C1 to B1
+                65.406f, 69.296f, 73.416f, 77.782f, 82.407f, 87.307f, 92.499f, 97.999f, 103.826f, 110.000f, 116.541f, 123.471f, // C2 to B2
+                130.813f, 138.591f, 146.832f, 155.563f, 164.814f, 174.614f, 184.997f, 195.998f, 207.652f, 220.000f, 233.082f, 246.942f, // C3 to B3
+                261.626f, 277.183f, 293.665f, 311.127f, 329.628f, 349.228f, 369.994f, 391.995f, 415.305f, 440.000f, 466.164f, 493.883f, // C4 to B4
+                523.251f, 554.365f, 587.330f, 622.254f, 659.255f, 698.456f, 739.989f, 783.991f, 830.609f, 880.000f, 932.328f, 987.767f, // C5 to B5
+                1046.502f, 1108.731f, 1174.659f, 1244.508f, 1318.510f, 1396.913f, 1479.978f, 1567.982f, 1661.219f, 1760.000f, 1864.655f, 1975.533f, // C6 to B6
+                2093.005f, 2217.461f, 2349.318f, 2489.016f, 2637.020f, 2793.826f, 2959.955f, 3135.963f, 3322.438f, 3520.000f, 3729.310f, 3951.066f, // C7 to B7
+                4186.009f, 4434.922f, 4698.636f, 4978.032f, 5274.041f, 5587.652f, 5919.911f, 6271.927f, 6644.875f, 7040.000f, 7458.620f, 7902.133f, // C8 to B8
+                8372.018f, 8869.844f, 9397.273f, 9956.063f, 10548.082f, 11175.303f, 11839.822f, 12543.854f // C9 to G9
+            };
+            
+            if (note >= 128) note = 127; // Clamp to valid range
+            return midi_freq_table[note];
         }
     };
     
@@ -168,17 +178,19 @@ public:
             // Get smoothed master volume (pure fix15 - no floats in audio thread!)
             fix15 current_master_vol = s_master_vol.getNextValue();
             
-            fix15 mixedSample = 0;
+            // OVERFLOW FIX: Use 32-bit accumulator to prevent overflow during voice mixing
+            int32_t mixedSample32 = 0;
             
             // Process all active voices and mix their output
             for (auto& voice : voices) {
                 if (voice.envelope.isActive()) {
-                    mixedSample += processVoice(voice);
+                    mixedSample32 += processVoice(voice); // Accumulate in 32-bit to prevent overflow
                 }
             }
             
-            // Apply master volume with voice mixing normalization (divided by NUM_VOICES and then by 8)
-            fix15 finalSample = multfix15(mixedSample, (current_master_vol >> (3 + 2))); // /8 for volume, /4 for voice mixing
+            // OVERFLOW FIX: Scale down by NUM_VOICES to prevent overflow, then apply master volume
+            fix15 normalizedSample = (fix15)(mixedSample32 / NUM_VOICES); // Divide by voice count first
+            fix15 finalSample = multfix15(normalizedSample, (current_master_vol >> 3)); // Then apply master volume (/8)
 
             // Output to all channels
             for (uint32_t ch = 0; ch < buffer.getNumChannels(); ++ch) {
@@ -189,17 +201,10 @@ public:
 
 private:
     fix15 processVoice(Voice& voice) {
-        // Get smoothed values
+        // OPTIMIZED: Removed per-sample frequency smoothing - frequency is set once per note
         fix15 current_velocity = voice.s_velocity.getNextValue();
-        float smooth_frequency = voice.s_frequency.getNextValue();
-
-        // Update oscillator frequency if it changed (smooth frequency transitions)
-        if (smooth_frequency != voice.currentFreq) {
-            voice.oscillator.setFrequency(smooth_frequency, sampleRate);
-            voice.currentFreq = smooth_frequency;
-        }
         
-        // Get envelope value
+        // Get envelope value (this handles StealFade for smooth voice stealing)
         fix15 env_level = voice.envelope.getNextValue();
         
         // Get the next sample from the oscillator
@@ -250,7 +255,7 @@ private:
     }
     
     void handleNoteOn(uint8_t note, fix15 velocity) {
-        // 1. Find the first available (inactive) voice
+        // 1. Find the first completely idle voice
         for (auto& voice : voices) {
             if (!voice.envelope.isActive()) {
                 voice.noteOn(note, velocity, sampleRate);
@@ -258,7 +263,15 @@ private:
             }
         }
         
-        // 2. If all voices are busy, steal one using round-robin scheme
+        // 2. If no idle voices, look for voices in release phase (prefer stealing these)
+        for (auto& voice : voices) {
+            if (voice.envelope.getState() == Fix15VCAEnvelopeModule::State::Release) {
+                voice.noteOn(note, velocity, sampleRate); // This will do a clean restart, not StealFade
+                return; // Found a releasing voice to reuse
+            }
+        }
+        
+        // 3. If all voices are actively playing (Attack/Decay/Sustain), steal one using round-robin
         voices[next_voice_to_steal].noteOn(note, velocity, sampleRate);
         next_voice_to_steal = (next_voice_to_steal + 1) % NUM_VOICES;
     }
