@@ -54,17 +54,17 @@ public:
         s_sustainLevel.reset(sampleRate, 0.01); // 10ms smoothing for sustain changes
         s_sustainLevel.setValue(sustainLevel);
         
-        // Initialize smoothed timing parameters (50ms smoothing to prevent clicks)
+        // Initialize smoothed sample counts (50ms smoothing to prevent clicks)
         s_attackSamples.reset(sampleRate, 0.05);
         s_decaySamples.reset(sampleRate, 0.05);
         s_releaseSamples.reset(sampleRate, 0.05);
         
-        updateSampleCounts();
+        // Initialize with default sample counts
+        s_attackSamples.setValue(attackSamples);
+        s_decaySamples.setValue(decaySamples);
+        s_releaseSamples.setValue(releaseSamples);
         
-        // Initialize smoothed values with initial sample counts
-        s_attackSamples.setValue((float)attackSamples);
-        s_decaySamples.setValue((float)decaySamples);
-        s_releaseSamples.setValue((float)releaseSamples);
+        updateSampleCounts();
     }
 
     void noteOn() {
@@ -86,16 +86,14 @@ public:
 
     void setAttackTime(float seconds) {
         attackTimeSeconds = std::max(0.001f, seconds);
-        updateSampleCounts();
-        // Update smoothed sample count for real-time changes
-        s_attackSamples.setTargetValue((float)attackSamples);
+        attackSamples = (uint32_t)(attackTimeSeconds * sampleRate);
+        s_attackSamples.setTargetValue(attackSamples);
     }
 
     void setDecayTime(float seconds) {
         decayTimeSeconds = std::max(0.001f, seconds);
-        updateSampleCounts();
-        // Update smoothed sample count for real-time changes
-        s_decaySamples.setTargetValue((float)decaySamples);
+        decaySamples = (uint32_t)(decayTimeSeconds * sampleRate);
+        s_decaySamples.setTargetValue(decaySamples);
     }
 
     void setSustainLevel(float level) {
@@ -111,9 +109,8 @@ public:
 
     void setReleaseTime(float seconds) {
         releaseTimeSeconds = std::max(0.001f, seconds);
-        updateSampleCounts();
-        // Update smoothed sample count for real-time changes
-        s_releaseSamples.setTargetValue((float)releaseSamples);
+        releaseSamples = (uint32_t)(releaseTimeSeconds * sampleRate);
+        s_releaseSamples.setTargetValue(releaseSamples);
     }
 
     void process(choc::buffer::InterleavedView<fix15>& buffer) override {
@@ -138,21 +135,21 @@ public:
         // Update smoothed sustain level and timing parameters
         sustainLevel = s_sustainLevel.getNextValue();
         
-        // Get current smoothed sample counts (real-time parameter changes)
-        float currentAttackSamples = s_attackSamples.getNextValue();
-        float currentDecaySamples = s_decaySamples.getNextValue();
-        float currentReleaseSamples = s_releaseSamples.getNextValue();
+        // Get smoothed sample counts (no float multiplication needed)
+        uint32_t currentAttackSamples = s_attackSamples.getNextValue();
+        uint32_t currentDecaySamples = s_decaySamples.getNextValue();
+        uint32_t currentReleaseSamples = s_releaseSamples.getNextValue();
 
         switch (state) {
             case State::Attack:
-                if (currentAttackSamples > 1.0f) {
-                    // Use smoothed attack time for real-time parameter changes
-                    float progress = (float)sampleCounter / currentAttackSamples;
+                if (currentAttackSamples > 0) {
+                    // Use 32-bit sample counting with floating-point progress calculation
+                    float progress = (float)sampleCounter / (float)currentAttackSamples;
                     progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
                     currentLevel = float2fix15(progress);
                     
                     sampleCounter++;
-                    if (sampleCounter >= (uint32_t)currentAttackSamples) {
+                    if (sampleCounter >= currentAttackSamples) {
                         currentLevel = FIX15_ONE;
                         state = State::Decay;
                         sampleCounter = 0; // Reset for decay phase
@@ -166,9 +163,9 @@ public:
                 break;
                 
             case State::Decay:
-                if (currentDecaySamples > 1.0f) {
-                    // Use smoothed decay time for real-time parameter changes
-                    float progress = (float)sampleCounter / currentDecaySamples;
+                if (currentDecaySamples > 0) {
+                    // Use 32-bit sample counting with floating-point progress calculation
+                    float progress = (float)sampleCounter / (float)currentDecaySamples;
                     progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
                     float sustainFloat = fix152float(sustainLevel);
                     // Interpolate from 1.0 down to sustain level
@@ -176,10 +173,9 @@ public:
                     currentLevel = float2fix15(levelFloat);
                     
                     sampleCounter++;
-                    if (sampleCounter >= (uint32_t)currentDecaySamples) {
+                    if (sampleCounter >= currentDecaySamples) {
                         currentLevel = sustainLevel;
                         state = State::Sustain;
-                        // No need to reset sampleCounter for sustain phase
                     }
                 } else {
                     // Instant decay
@@ -198,9 +194,9 @@ public:
                 break;
                 
             case State::Release:
-                if (currentReleaseSamples > 1.0f) {
-                    // Use smoothed release time for real-time parameter changes
-                    float progress = (float)sampleCounter / currentReleaseSamples;
+                if (currentReleaseSamples > 0) {
+                    // Use 32-bit sample counting with floating-point progress calculation
+                    float progress = (float)sampleCounter / (float)currentReleaseSamples;
                     progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
                     float releaseStartFloat = fix152float(releaseStartLevel);
                     // Interpolate from release start level down to 0
@@ -208,7 +204,7 @@ public:
                     currentLevel = float2fix15(levelFloat);
                     
                     sampleCounter++;
-                    if (sampleCounter >= (uint32_t)currentReleaseSamples) {
+                    if (sampleCounter >= currentReleaseSamples) {
                         currentLevel = FIX15_ZERO;
                         state = State::Idle;
                     }
@@ -233,7 +229,6 @@ private:
         attackSamples = (uint32_t)(attackTimeSeconds * sampleRate);
         decaySamples = (uint32_t)(decayTimeSeconds * sampleRate);
         releaseSamples = (uint32_t)(releaseTimeSeconds * sampleRate);
-        
     }
 
     float sampleRate;
@@ -242,10 +237,10 @@ private:
     fix15 sustainLevel = float2fix15(0.7f);
     Fix15SmoothedValue s_sustainLevel;
     
-    // Smoothed timing parameters for click-free real-time updates
-    SmoothedValue<float> s_attackSamples;
-    SmoothedValue<float> s_decaySamples; 
-    SmoothedValue<float> s_releaseSamples;
+    // Smoothed timing parameters as sample counts (eliminates float multiplication per sample)
+    SmoothedValue<uint32_t> s_attackSamples;
+    SmoothedValue<uint32_t> s_decaySamples; 
+    SmoothedValue<uint32_t> s_releaseSamples;
     
     // 32-bit sample counting approach - handles long envelopes without overflow
     uint32_t sampleCounter = 0;        // Current sample count in current envelope phase

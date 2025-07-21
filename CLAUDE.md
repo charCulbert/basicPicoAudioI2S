@@ -27,7 +27,7 @@ Copy the generated `.uf2` file to the Pico when in BOOTSEL mode, or use a debugg
 
 ## Hardware Configuration
 
-- **Target Board:** Raspberry Pi Pico 2 W (RP2350)
+- **Target Board:** Raspberry Pi Pico 2 W (RP2350) or RP2040 (no FPU)
 - **Audio Output:** I2S via PIO (pins 19-21)
 - **System Clock:** 250MHz overclock (VREG_VOLTAGE_1_15)
 - **Audio Format:** 44.1kHz, stereo, 128-frame buffers
@@ -55,11 +55,21 @@ The project uses 16.15 signed fixed-point format (`fix15`) for audio processing:
 - Range: ±65536 with ~0.00003 resolution
 - Core operations in `Fix15.h`
 - All audio modules process `fix15` samples via CHOC buffers
+- Audio thread optimized for RP2040 (no FPU) with minimal float operations
 
 ### Audio Modules
-- `SimpleFixedOscModule` - Fixed-point sine wave oscillator with lookup table
+- `SimpleFixedOscModule` - Complete monophonic synthesizer voice with sine oscillator
+- `Fix15VCAEnvelopeModule` - High-performance ADSR envelope with classic analog behavior
 - Modules implement `AudioModule::process(choc::buffer::InterleavedView<fix15>&)`
 - Support for FM synthesis, envelopes, and reverb
+
+### Envelope System
+The ADSR envelope (`Fix15VCAEnvelopeModule`) features:
+- **Real-time parameter updates** - Classic analog synth behavior (parameters affect currently playing notes)
+- **Click-free smoothing** - 50ms parameter transitions prevent audio artifacts
+- **32-bit sample counting** - Handles envelope times up to hours without overflow
+- **RP2040 optimized** - Peak 8 float operations per sample, rest is integer math
+- **Professional envelope curves** - Linear attack/decay/release with smooth sustain tracking
 
 ### Hardware Abstraction
 - `I2sAudioOutput` vs `PwmAudioOutput` - swappable via template/typedef
@@ -73,13 +83,22 @@ The project uses 16.15 signed fixed-point format (`fix15`) for audio processing:
 - **C++17** standard required
 - **PIO Assembly** for I2S implementation
 
+## Performance Characteristics
+
+- **Audio Thread CPU Usage:** Minimal (designed for 250MHz RP2350 or 133MHz RP2040)
+- **Float Operations:** Peak 8 per sample during envelope decay phase
+- **Memory Usage:** Static allocation, no heap usage in audio thread
+- **Real-time Safety:** No blocking operations, no dynamic memory allocation
+- **Latency:** ~3ms at 44.1kHz (128 sample buffer)
+
 ## Development Notes
 
 - System uses real-time constraints - avoid blocking operations in audio thread
 - MIDI input via USB serial
-- Parameter changes are lock-free via global parameter store
+- Parameter changes are lock-free via global parameter store  
 - Debug timing via GPIO 26 toggle in audio callback
 - Fixed-point math preferred over floating-point for performance
+- Envelope parameters respond immediately (classic analog synth behavior)
 
 ## Common Patterns
 
@@ -88,8 +107,16 @@ The project uses 16.15 signed fixed-point format (`fix15`) for audio processing:
 2. Implement `process(choc::buffer::InterleavedView<fix15>&)`
 3. Add to engine in `main_core1()`
 4. Use `fix15` arithmetic for all audio processing
+5. Minimize float operations in audio thread
 
 **Parameter Management:**
 - Add parameters in `ParameterStore.h::initialize_parameters()`
 - Access via `g_synth_parameters` global vector
 - Thread-safe reads from audio thread
+- Parameters update immediately for expressive real-time control
+
+**Envelope Integration:**
+- Use `Fix15VCAEnvelopeModule` for ADSR envelopes
+- Call `noteOn()` and `noteOff()` for gate control
+- Use `getNextValue()` for envelope level or `process()` for VCA mode
+- Parameters can be changed during playback for performance expression

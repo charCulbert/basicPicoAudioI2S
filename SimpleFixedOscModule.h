@@ -142,13 +142,6 @@ private:
         if (p_attack && p_decay && p_sustain && p_release) {
             float sustainValue = p_sustain->getValue();
             
-            // DEBUG: Print sustain parameter changes
-            static float lastSustain = -1.0f;
-            if (fabsf(sustainValue - lastSustain) > 0.01f) {
-                // printf("PARAM_SUSTAIN: %.4f\n", sustainValue);
-                lastSustain = sustainValue;
-            }
-            
             // Always update sustain (smoothed) - safe to change during any phase
             envelope.setSustainLevel(sustainValue);
             
