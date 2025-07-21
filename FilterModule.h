@@ -4,7 +4,6 @@
 #include "Fix15.h"
 #include "ParameterStore.h"
 #include "SmoothedValue.h"
-#include <cmath>
 
 class FilterModule : public AudioModule {
 public:
@@ -23,51 +22,60 @@ public:
       s_cutoff.setValue(p_cutoff->getValue());
     if (p_resonance)
       s_resonance.setValue(p_resonance->getValue());
+
+    // Initialize filter states
+    for (int ch = 0; ch < 2; ch++) {
+      stage1[ch] = stage2[ch] = stage3[ch] = stage4[ch] = 0;
+    }
   }
 
   void process(choc::buffer::InterleavedView<fix15> &buffer) override {
     update_parameters();
 
-    fix15 cutoff = s_cutoff.getNextValue();
-    fix15 resonance = s_resonance.getNextValue();
+    for (uint32_t frame = 0; frame < buffer.getNumFrames(); ++frame) {
+      fix15 cutoff_param = s_cutoff.getNextValue();
+      fix15 resonance_param = s_resonance.getNextValue();
 
-    // Coefficients for State Variable Filter (SVF)
-    // Mapped from 0-1 float to musically useful ranges.
-    float cutoff_float = fix152float(s_cutoff.getNextValue());
-    float resonance_float = fix152float(s_resonance.getNextValue());
+      // Map cutoff: 0-1 -> 0.001-0.85 (pre-computed constants)
+      fix15 g = multfix15(cutoff_param, 27787) + 33;  // 0.849 * 32768 = 27787, 0.001 * 32768 = 33
+      // Map resonance: 0-1 -> 0-3.9
+      fix15 res = multfix15(resonance_param, 127795);  // 3.9 * 32768 = 127795
 
-    // A common mapping for cutoff control to filter coefficient 'f'
-    // This gives an exponential response which is more musical.
-    // The range is clamped to prevent instability.
-    float f_float =
-        2.0f *
-        sinf(3.14159f * (20.0f * powf(1000.0f, cutoff_float)) / sampleRate);
-    if (f_float > 1.0f)
-      f_float = 1.0f;
-    if (f_float < 0.0f)
-      f_float = 0.0f;
-
-    fix15 f = float2fix15(f_float);
-
-    // 'q' controls resonance. Higher resonance parameter = lower damping.
-    // We map resonance to a Q factor, then convert to damping.
-    // This prevents self-oscillation at high resonance settings.
-    float Q =
-        0.5f + resonance_float * 20.0f; // Map resonance to Q from 0.5 to 20.5
-    fix15 q = float2fix15(1.0f / Q);
-
-    for (uint32_t f_idx = 0; f_idx < buffer.getNumFrames(); ++f_idx) {
       for (uint32_t ch = 0; ch < buffer.getNumChannels(); ++ch) {
-        fix15 in = buffer.getSample(ch, f_idx);
+        fix15 input = buffer.getSample(ch, frame);
 
-        fix15 high = in - multfix15(q, z1[ch]) - z2[ch];
-        fix15 band = multfix15(f, high) + z1[ch];
-        fix15 low = multfix15(f, band) + z2[ch];
+        // Moog ladder with resonance feedback
+        fix15 fb_input = input - multfix15(res, stage4[ch]);
 
-        z1[ch] = band;
-        z2[ch] = low;
+        // Clamp input
+        if (fb_input > 524288) fb_input = 524288;      // 16.0 * 32768 = 524288
+        else if (fb_input < -524288) fb_input = -524288;
 
-        buffer.getSample(ch, f_idx) = low;
+        // 4-pole ladder: each stage is stage += g * (input - stage)
+        fix15 temp = fb_input - stage1[ch];
+        stage1[ch] += multfix15(g, temp);
+
+        temp = stage1[ch] - stage2[ch];
+        stage2[ch] += multfix15(g, temp);
+
+        temp = stage2[ch] - stage3[ch];
+        stage3[ch] += multfix15(g, temp);
+
+        temp = stage3[ch] - stage4[ch];
+        stage4[ch] += multfix15(g, temp);
+
+        // Clamp filter output
+        if (stage4[ch] > 262144) stage4[ch] = 262144;      // 8.0 * 32768 = 262144
+        else if (stage4[ch] < -262144) stage4[ch] = -262144;
+
+        // 2.5x makeup gain
+        fix15 output = multfix15(stage4[ch], 81920);       // 2.5 * 32768 = 81920
+        
+        // Final clamp
+        if (output > 524288) output = 524288;            // 16.0 * 32768 = 524288
+        else if (output < -524288) output = -524288;
+
+        buffer.getSample(ch, frame) = output;
       }
     }
   }
@@ -87,6 +95,9 @@ private:
   Fix15SmoothedValue s_cutoff;
   Fix15SmoothedValue s_resonance;
 
-  fix15 z1[2] = {0, 0};
-  fix15 z2[2] = {0, 0};
+  // Moog ladder filter stages (4-pole, stereo)
+  fix15 stage1[2];
+  fix15 stage2[2];
+  fix15 stage3[2];
+  fix15 stage4[2];
 };

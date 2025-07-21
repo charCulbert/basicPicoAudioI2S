@@ -1,23 +1,4 @@
-/**
- * Fix15VCAEnvelopeModule.h - Fixed-Point ADSR Envelope Generator
- * 
- * Implements a classic ADSR (Attack-Decay-Sustain-Release) envelope generator
- * using pure 16.15 fixed-point arithmetic for optimal RP2040 performance.
- * 
- * Key Features:
- * - Pure fix15 arithmetic in audio thread (no floating-point operations)
- * - Smoothed sustain level changes prevent parameter zipper noise
- * - Counter-based timing for predictable, sample-accurate envelopes
- * - Sub-audio thresholding ensures true silence when sustain = 0
- * - Can function as both envelope generator and VCA (Voltage Controlled Amplifier)
- * 
- * Envelope Phases:
- * - Attack: Rise from 0 to 1 over specified time
- * - Decay: Fall from 1 to sustain level over specified time  
- * - Sustain: Hold at sustain level until note off
- * - Release: Fall from current level to 0 over specified time
- * - Idle: Silent state (level = 0)
- */
+// Fixed-point ADSR envelope generator optimized for RP2040
 
 #pragma once
 
@@ -28,44 +9,26 @@
 #include <cmath>
 #include <algorithm>
 
-/**
- * ADSR envelope generator with VCA functionality
- * 
- * Uses hybrid approach for timing:
- * - Audio signals: fix15 for performance
- * - Envelope timing: 32-bit sample counting with floating-point increments
- * - Avoids fix15 overflow issues while maintaining audio thread performance
- * 
- * This module can operate in two modes:
- * 1. Pure envelope generator: Call getNextValue() to get envelope level
- * 2. VCA mode: Call process() to apply envelope to incoming audio buffer
- * 
- * Threading Model:
- * - Parameter updates (setAttackTime, etc.) called from control thread
- * - Audio processing (getNextValue, process) called from audio thread
- * - Sustain level changes are smoothed to prevent zipper noise
- */
+// ADSR envelope with VCA functionality - can generate envelope or process audio directly
 class Fix15VCAEnvelopeModule : public AudioModule {
 public:
     // Envelope state machine phases
     enum class State { Idle, Attack, Decay, Sustain, Release, StealFade };
 
     Fix15VCAEnvelopeModule(float sampleRate) : sampleRate(sampleRate) {
-        s_sustainLevel.reset(sampleRate, 0.01); // 10ms smoothing for sustain changes
+        s_sustainLevel.reset(sampleRate, 0.01);
         s_sustainLevel.setValue(sustainLevel);
         
-        // Initialize smoothed sample counts (50ms smoothing to prevent clicks)
-        s_attackSamples.reset(sampleRate, 0.05);
-        s_decaySamples.reset(sampleRate, 0.05);
-        s_releaseSamples.reset(sampleRate, 0.05);
+        // 10ms smoothing for timing parameters
+        s_attackSamples.reset(sampleRate, 0.01);
+        s_decaySamples.reset(sampleRate, 0.01);
+        s_releaseSamples.reset(sampleRate, 0.01);
         
-        // Initialize with default sample counts
         s_attackSamples.setValue(attackSamples);
         s_decaySamples.setValue(decaySamples);
         s_releaseSamples.setValue(releaseSamples);
         
-        // StealFade timing: very short (5ms) to minimize delay but prevent clicks
-        stealFadeTimeSeconds = 0.005f;
+        stealFadeTimeSeconds = 0.005f;  // 5ms voice steal fade
         stealFadeSamples = (uint32_t)(stealFadeTimeSeconds * sampleRate);
         
         updateSampleCounts();
@@ -73,13 +36,12 @@ public:
 
     void noteOn() {
         if (currentLevel > FIX15_ZERO) {
-            // FIXED: Always use StealFade when current level > 0 to prevent clicks
-            // This includes voices in Release state - they need to fade to zero first
+            // Fade active voice to prevent clicks
             state = State::StealFade;
             stealFadeStartLevel = currentLevel;
             sampleCounter = 0;
         } else {
-            // Voice is free (Idle with level = 0) - start attack immediately
+            // Start attack on idle voice
             currentLevel = FIX15_ZERO;
             state = State::Attack;
             sampleCounter = 0;
@@ -88,9 +50,9 @@ public:
 
     void noteOff() {
         if (state != State::Idle) {
-            releaseStartLevel = currentLevel; // Remember level when release started
+            releaseStartLevel = currentLevel;
             state = State::Release;
-            sampleCounter = 0; // Reset counter for release phase
+            sampleCounter = 0;
         }
     }
 
@@ -111,11 +73,6 @@ public:
 
     void setSustainLevel(float level) {
         sustainLevelFloat = std::max(0.0f, std::min(1.0f, level));
-        
-        // DEBUG: Print sustain changes
-        // printf("SUSTAIN: param=%.4f -> fix15=%d\n", sustainLevelFloat, (sustainLevelFloat <= 0.0001f) ? 0 : (int)float2fix15(sustainLevelFloat));
-        
-        // Force to exactly zero when parameter is zero (no tolerance needed)
         fix15 newSustainLevel = (sustainLevelFloat == 0.0f) ? FIX15_ZERO : float2fix15(sustainLevelFloat);
         s_sustainLevel.setTargetValue(newSustainLevel);
     }
@@ -123,7 +80,13 @@ public:
     void setReleaseTime(float seconds) {
         releaseTimeSeconds = std::max(0.001f, seconds);
         releaseSamples = (uint32_t)(releaseTimeSeconds * sampleRate);
-        s_releaseSamples.setTargetValue(releaseSamples);
+        
+        // Apply immediately during release to prevent stuttering
+        if (state == State::Release) {
+            s_releaseSamples.setValue(releaseSamples);
+        } else {
+            s_releaseSamples.setTargetValue(releaseSamples);
+        }
     }
 
     void process(choc::buffer::InterleavedView<fix15>& buffer) override {
@@ -131,7 +94,6 @@ public:
         auto numChannels = buffer.getNumChannels();
 
         if (state == State::Idle && currentLevel == FIX15_ZERO) {
-            // OPTIMIZED: Use fixed-point zero instead of float applyGain
             buffer.clear();
             return;
         }
@@ -163,7 +125,7 @@ public:
                         progress = FIX15_ONE;
                     } else {
                         // Use 64-bit arithmetic for consistency (though overflow unlikely with 5ms fade)
-                        progress = (fix15)((uint64_t)sampleCounter * 32768 / stealFadeSamples);
+                        progress = (fix15)(((uint64_t)sampleCounter << 15) / stealFadeSamples);
                     }
                     
                     // Fade from start level to 0: level = startLevel * (1.0 - progress)
@@ -193,7 +155,7 @@ public:
                         progress = FIX15_ONE;
                     } else {
                         // OVERFLOW FIX: Use 64-bit arithmetic to prevent overflow with large sample counts
-                        progress = (fix15)((uint64_t)sampleCounter * 32768 / currentAttackSamples);
+                        progress = (fix15)(((uint64_t)sampleCounter << 15) / currentAttackSamples);
                     }
                     
                     // SMOOTH PARAMETER CHANGES: When timing changes, preserve current level
@@ -229,7 +191,7 @@ public:
                         progress = FIX15_ONE;
                     } else {
                         // OVERFLOW FIX: Use 64-bit arithmetic to prevent overflow with large sample counts
-                        progress = (fix15)((uint64_t)sampleCounter * 32768 / currentDecaySamples);
+                        progress = (fix15)(((uint64_t)sampleCounter << 15) / currentDecaySamples);
                     }
                     
                     // SMOOTH PARAMETER CHANGES: When timing changes, preserve current level
@@ -238,7 +200,7 @@ public:
                         fix15 decay_range = FIX15_ONE - sustainLevel;
                         if (decay_range > 0 && currentLevel > sustainLevel && currentLevel <= FIX15_ONE) {
                             // Reverse calculate where we should be: progress = (1.0 - currentLevel) / decay_range
-                            uint32_t reverse_progress = ((uint32_t)(FIX15_ONE - currentLevel) * 32768) / decay_range;
+                            uint32_t reverse_progress = ((uint32_t)(FIX15_ONE - currentLevel) << 15) / decay_range;
                             if (reverse_progress <= 32768) {
                                 sampleCounter = (uint32_t)((uint64_t)reverse_progress * currentDecaySamples >> 15);
                             }
@@ -280,7 +242,7 @@ public:
                         progress = FIX15_ONE;
                     } else {
                         // OVERFLOW FIX: Use 64-bit arithmetic to prevent overflow with large sample counts
-                        progress = (fix15)((uint64_t)sampleCounter * 32768 / currentReleaseSamples);
+                        progress = (fix15)(((uint64_t)sampleCounter << 15) / currentReleaseSamples);
                     }
                     
                     // SMOOTH PARAMETER CHANGES: When timing changes, preserve current level
@@ -288,7 +250,7 @@ public:
                         // Parameter change caused overshoot - preserve current level and recalc counter
                         if (releaseStartLevel > 0 && currentLevel >= 0 && currentLevel <= releaseStartLevel) {
                             // Reverse calculate: progress = 1.0 - (currentLevel / releaseStartLevel)
-                            uint32_t level_ratio = ((uint32_t)currentLevel * 32768) / releaseStartLevel;
+                            uint32_t level_ratio = ((uint32_t)currentLevel << 15) / releaseStartLevel;
                             if (level_ratio <= 32768) {
                                 uint32_t reverse_progress = 32768 - level_ratio;
                                 sampleCounter = (uint32_t)((uint64_t)reverse_progress * currentReleaseSamples >> 15);

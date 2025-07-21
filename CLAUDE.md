@@ -59,14 +59,24 @@ The project uses 16.15 signed fixed-point format (`fix15`) for audio processing:
 
 ### Audio Modules
 - `SimpleFixedOscModule` - Complete monophonic synthesizer voice with sine oscillator
-- `Fix15VCAEnvelopeModule` - High-performance ADSR envelope with classic analog behavior
+- `Fix15VCAEnvelopeModule` - High-performance ADSR envelope with classic analog behavior  
+- `FilterModule` - Moog-style 4-pole ladder filter with resonance
 - Modules implement `AudioModule::process(choc::buffer::InterleavedView<fix15>&)`
-- Support for FM synthesis, envelopes, and reverb
+- Support for FM synthesis, envelopes, filtering, and reverb
+
+### Filter System
+The Moog ladder filter (`FilterModule`) features:
+- **4-pole cascade** - Classic Moog topology with 24dB/octave rolloff
+- **Resonance feedback** - From final stage back to input for characteristic sound
+- **Per-sample responsiveness** - Immediate knob response for expressive playing
+- **Stability clamping** - Prevents oscillation blowup while preserving character
+- **Makeup gain** - 2.5x compensation for natural filter volume loss
+- **Pure fix15 processing** - 6 multiplications per sample (4 poles + resonance + gain)
 
 ### Envelope System
 The ADSR envelope (`Fix15VCAEnvelopeModule`) features:
 - **Real-time parameter updates** - Classic analog synth behavior (parameters affect currently playing notes)
-- **Click-free smoothing** - 50ms parameter transitions prevent audio artifacts
+- **Click-free smoothing** - 10ms parameter transitions prevent audio artifacts
 - **32-bit sample counting** - Handles envelope times up to hours without overflow
 - **RP2040 optimized** - Peak 8 float operations per sample, rest is integer math
 - **Professional envelope curves** - Linear attack/decay/release with smooth sustain tracking
@@ -120,3 +130,10 @@ The ADSR envelope (`Fix15VCAEnvelopeModule`) features:
 - Call `noteOn()` and `noteOff()` for gate control
 - Use `getNextValue()` for envelope level or `process()` for VCA mode
 - Parameters can be changed during playback for performance expression
+
+**Filter Integration:**
+- Use `FilterModule` for Moog-style filtering
+- Add `filterCutoff` and `filterResonance` parameters to ParameterStore
+- Filter processes entire audio buffer with per-sample coefficient updates
+- Cutoff: 0-1 maps to ~20Hz-18kHz with musical exponential curve
+- Resonance: 0-1 maps to no feedback up to near self-oscillation

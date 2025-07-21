@@ -8,6 +8,7 @@
 #include "ParameterStore.h"
 // #include "PolyFreqModSineModule.h"
 #include "FilterModule.h"
+#include "GainModule.h"
 #include "MidiSerialListener.h"
 #include "SimpleFixedOscModule.h"
 
@@ -26,14 +27,15 @@ void main_core1() {
   static AudioEngine engine(ActiveAudioOutput::NUM_CHANNELS,
                             ActiveAudioOutput::BUFFER_SIZE);
 
-  // 2. Create the "smart" synth voice module. It handles everything.
-  // PolyphonicFMModule synth_voice(ActiveAudioOutput::SAMPLE_RATE);
-  SimpleFixedOscModule synth_voice(ActiveAudioOutput::SAMPLE_RATE);
-  FilterModule filter(ActiveAudioOutput::SAMPLE_RATE);
+  // 2. Create audio modules in processing order
+  static SimpleFixedOscModule synth_voice((float)ActiveAudioOutput::SAMPLE_RATE);
+  static FilterModule filter((float)ActiveAudioOutput::SAMPLE_RATE);
+  static GainModule master_gain((float)ActiveAudioOutput::SAMPLE_RATE);
 
-  // 3. Add the single synth voice to the engine.
+  // 3. Add modules to engine in processing order (last module = master gain)
   engine.addModule(&synth_voice);
   engine.addModule(&filter);
+  engine.addModule(&master_gain);
 
   // 4. Instantiate the audio hardware driver and give it the engine
   static ActiveAudioOutput audioOutput(engine);

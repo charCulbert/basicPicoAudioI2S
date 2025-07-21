@@ -49,10 +49,10 @@ class I2sAudioOutput {
 public:
     // --- Core Audio Configuration ---
     static constexpr int SAMPLE_RATE = 44100;
-    static constexpr int BUFFER_SIZE = 128; // Number of L/R sample pairs per buffer
+    static constexpr int BUFFER_SIZE = 64; // Number of L/R sample pairs per buffer
     static constexpr int NUM_CHANNELS = 2;     // Stereo
 
-    // --- Hardware Pin Configuration ---
+    // --- Hardware Pin Cofiguration ---
     // By default, the PIO program expects:
     //   - CLOCK_PIN_BASE     = LRCLK
     //   - CLOCK_PIN_BASE + 1 = BCLK

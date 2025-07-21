@@ -43,7 +43,7 @@
 class SimpleFixedOscModule : public AudioModule {
 private:
     // Number of polyphonic voices
-    static constexpr int NUM_VOICES = 8;
+    static constexpr int NUM_VOICES = 10;
     
     struct Voice {
         // DSP objects per voice
@@ -111,7 +111,6 @@ private:
     // === Parameter System ===
     // Pointers to global parameters (shared between control and audio threads)
     // These are read-only from the audio thread perspective
-    Parameter* p_master_vol = nullptr;
     Parameter* p_attack = nullptr;
     Parameter* p_decay = nullptr;
     Parameter* p_sustain = nullptr;
@@ -122,7 +121,6 @@ private:
     // These convert parameter changes into smooth audio-rate transitions
     // Prevents clicks/pops when parameters change during audio processing
     // CRITICAL: Audio thread uses ONLY these smoothed values, never raw parameters
-    Fix15SmoothedValue s_master_vol;
     Fix15SmoothedValue s_attack;           // Note: A/D/R smoothers exist but envelope uses direct updates
     Fix15SmoothedValue s_decay;            // They're kept for potential future use
     Fix15SmoothedValue s_sustain;
@@ -140,7 +138,6 @@ public:
         
         // Find our parameters by their string ID from the global store
         for (auto* p : g_synth_parameters) {
-            if (p->getID() == "masterVol") p_master_vol = p;
             if (p->getID() == "attack") p_attack = p;
             if (p->getID() == "decay") p_decay = p;
             if (p->getID() == "sustain") p_sustain = p;
@@ -148,14 +145,12 @@ public:
         }
         
         // Set ramp times for smoothers
-        s_master_vol.reset(sample_rate, 0.05);
         s_attack.reset(sample_rate, 0.01);
         s_decay.reset(sample_rate, 0.01);
         s_sustain.reset(sample_rate, 0.01);
         s_release.reset(sample_rate, 0.01);
         
         // Initialize smoothers with current values
-        if (p_master_vol) s_master_vol.setValue(p_master_vol->getValue());
 
         // Initialize all voice envelopes with parameter values from store
         for (auto& voice : voices) {
@@ -175,8 +170,6 @@ public:
         
         for (uint32_t f = 0; f < numFrames; ++f) {
             
-            // Get smoothed master volume (pure fix15 - no floats in audio thread!)
-            fix15 current_master_vol = s_master_vol.getNextValue();
             
             // OVERFLOW FIX: Use 32-bit accumulator to prevent overflow during voice mixing
             int32_t mixedSample32 = 0;
@@ -188,11 +181,10 @@ public:
                 }
             }
             
-            // OVERFLOW FIX: Scale down by NUM_VOICES to prevent overflow, then apply master volume
-            fix15 normalizedSample = (fix15)(mixedSample32 / NUM_VOICES); // Divide by voice count first
-            fix15 finalSample = multfix15(normalizedSample, (current_master_vol >> 3)); // Then apply master volume (/8)
+            // Scale down by voice count - use bit shift for performance
+            fix15 finalSample = (fix15)(mixedSample32 >> 3); // Divide by 8 using bit shift
 
-            // Output to all channels
+        // Output to all channels
             for (uint32_t ch = 0; ch < buffer.getNumChannels(); ++ch) {
                 buffer.getSample(ch, f) = finalSample;
             }
@@ -235,7 +227,6 @@ private:
         }
         
         // Update parameters from parameter store
-        if (p_master_vol) s_master_vol.setTargetValue(p_master_vol->getValue());
         
         // Update envelope parameters for all voices
         if (p_attack && p_decay && p_sustain && p_release) {
