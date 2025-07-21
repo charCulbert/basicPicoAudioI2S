@@ -4,7 +4,6 @@
 #include "hardware/vreg.h"
 // --- Core Application Headers ---
 #include "ParameterStore.h"
-#include "RotaryEncoderListener.h"
 #include "AudioEngine.h"
 #include "I2sAudioOutput.h"
 // #include "PolyFreqModSineModule.h"
@@ -68,12 +67,10 @@ int main() {
 
     // Create the listeners that will run on this core
     MidiSerialListener midi_listener;
-    RotaryEncoderListener rotary_listener;
 
     // The main control loop for Core 0
     while (true) {
         midi_listener.update();
-        rotary_listener.update();
     }
 
     return 0; // Will never be reached
