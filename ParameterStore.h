@@ -47,22 +47,15 @@ inline void initialize_parameters() {
         // Clear any previous parameters to be safe (for re-initialization)
         for (auto* p : g_synth_parameters) delete p;
         g_synth_parameters.clear();
-
-        // === Synthesis Parameters (Currently Unused - Legacy from FM Synth) ===
-        g_synth_parameters.push_back(new Parameter("modIndex",    "Mod Index",    0.0f,   10.0f,  0.15f,   1));    // FM modulation depth
-        g_synth_parameters.push_back(new Parameter("harmonicity", "Harmonicity",  0.2f,   10.0f,   2.8f,   10));   // FM frequency ratio
         
         // === ADSR Envelope Parameters ===
         g_synth_parameters.push_back(new Parameter("attack",      "Attack",       0.001f, 2.5f,   0.01f,  74));   // Attack time (seconds)
-        g_synth_parameters.push_back(new Parameter("decay",       "Decay",        0.003f, 2.0f,   0.0f,   71));   // Decay time (seconds)  
-        g_synth_parameters.push_back(new Parameter("sustain",     "Sustain",      0.0f,   1.0f,   0.0f,   73));   // Sustain level (0-1)
-        g_synth_parameters.push_back(new Parameter("release",     "Release",      0.01f,  5.0f,   0.0f,   72));   // Release time (seconds)
+        g_synth_parameters.push_back(new Parameter("decay",       "Decay",        0.003f, 2.0f,   0.2f,   71));   // Decay time (seconds)
+        g_synth_parameters.push_back(new Parameter("sustain",     "Sustain",      0.0f,   1.0f,   0.3f,   73));   // Sustain level (0-1)
+        g_synth_parameters.push_back(new Parameter("release",     "Release",      0.01f,  5.0f,   0.1f,   72));   // Release time (seconds)
         
         // === Master Controls ===
         g_synth_parameters.push_back(new Parameter("masterVol",   "Master Volume",0.0f,   1.0f,   0.05f,   75));   // Overall output level
         
-        // === Reverb Effect Parameters (Future Use) ===
-        g_synth_parameters.push_back(new Parameter("reverbSize",  "Reverb Size",   0.6f,   0.995f, 0.8f,  91));   // Reverb room size
-        g_synth_parameters.push_back(new Parameter("reverbDamp",  "Reverb Damp",   0.05f,  0.6f,   0.4f,   92));   // High-frequency damping
-        g_synth_parameters.push_back(new Parameter("reverbMix",   "Reverb Mix",    0.0f,   1.0f,   0.45f,   93));   // Dry/wet mix level
+
     }

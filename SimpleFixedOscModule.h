@@ -62,9 +62,7 @@ private:
     Fix15SmoothedValue s_decay;            // They're kept for potential future use
     Fix15SmoothedValue s_sustain;
     Fix15SmoothedValue s_release;
-    
-    // === Debug/Development Support ===
-    float last_master_vol = 0.0f;         // Used for tracking parameter changes during development
+
 
 public:
     SimpleFixedOscModule(float sample_rate)
