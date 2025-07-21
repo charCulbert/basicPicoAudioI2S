@@ -180,9 +180,18 @@ public:
                 
             case State::Attack:
                 if (currentAttackSamples > 0) {
-                    // Use 32-bit sample counting with floating-point progress calculation
+                    // Calculate progress and handle parameter changes smoothly
                     float progress = (float)sampleCounter / (float)currentAttackSamples;
-                    progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
+                    
+                    // If parameter change causes us to overshoot, adjust sample counter
+                    if (progress > 1.0f) {
+                        // Preserve current level and adjust counter to maintain continuity
+                        float currentLevelFloat = fix152float(currentLevel);
+                        sampleCounter = (uint32_t)(currentLevelFloat * currentAttackSamples);
+                        progress = currentLevelFloat;
+                    }
+                    
+                    progress = std::min(progress, 1.0f); // Final clamp
                     currentLevel = float2fix15(progress);
                     
                     sampleCounter++;
@@ -201,10 +210,22 @@ public:
                 
             case State::Decay:
                 if (currentDecaySamples > 0) {
-                    // Use 32-bit sample counting with floating-point progress calculation
+                    // Calculate progress and handle parameter changes smoothly
                     float progress = (float)sampleCounter / (float)currentDecaySamples;
-                    progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
                     float sustainFloat = fix152float(sustainLevel);
+                    
+                    // If parameter change causes us to overshoot, adjust sample counter
+                    if (progress > 1.0f) {
+                        // Preserve current level and adjust counter to maintain continuity
+                        float currentLevelFloat = fix152float(currentLevel);
+                        // Reverse the decay calculation to find appropriate counter
+                        float reverseProgress = (1.0f - currentLevelFloat) / (1.0f - sustainFloat);
+                        reverseProgress = std::max(0.0f, std::min(reverseProgress, 1.0f));
+                        sampleCounter = (uint32_t)(reverseProgress * currentDecaySamples);
+                        progress = reverseProgress;
+                    }
+                    
+                    progress = std::min(progress, 1.0f); // Final clamp
                     // Interpolate from 1.0 down to sustain level
                     float levelFloat = 1.0f - (progress * (1.0f - sustainFloat));
                     currentLevel = float2fix15(levelFloat);
@@ -232,10 +253,22 @@ public:
                 
             case State::Release:
                 if (currentReleaseSamples > 0) {
-                    // Use 32-bit sample counting with floating-point progress calculation
+                    // Calculate progress and handle parameter changes smoothly
                     float progress = (float)sampleCounter / (float)currentReleaseSamples;
-                    progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
                     float releaseStartFloat = fix152float(releaseStartLevel);
+                    
+                    // If parameter change causes us to overshoot, adjust sample counter
+                    if (progress > 1.0f) {
+                        // Preserve current level and adjust counter to maintain continuity
+                        float currentLevelFloat = fix152float(currentLevel);
+                        // Reverse the release calculation to find appropriate counter
+                        float reverseProgress = 1.0f - (currentLevelFloat / releaseStartFloat);
+                        reverseProgress = std::max(0.0f, std::min(reverseProgress, 1.0f));
+                        sampleCounter = (uint32_t)(reverseProgress * currentReleaseSamples);
+                        progress = reverseProgress;
+                    }
+                    
+                    progress = std::min(progress, 1.0f); // Final clamp
                     // Interpolate from release start level down to 0
                     float levelFloat = releaseStartFloat * (1.0f - progress);
                     currentLevel = float2fix15(levelFloat);
