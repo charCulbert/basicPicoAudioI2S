@@ -1,4 +1,28 @@
-// RotaryEncoder.h (The Correct, Non-Hardcoded Version)
+/**
+ * RotaryEncoder.h - Hardware Rotary Encoder Interface with Button
+ * 
+ * Implements interrupt-driven rotary encoder reading with integrated push button.
+ * Uses quadrature decoding to detect rotation direction and magnitude with
+ * debouncing and critical section protection for thread safety.
+ * 
+ * Hardware Requirements:
+ * - Quadrature rotary encoder (2-pin A/B outputs)
+ * - Integrated push button (or separate button)
+ * - Pull-up resistors (internal pull-ups used)
+ * 
+ * Features:
+ * - Interrupt-driven: No polling required, captures all encoder events
+ * - Quadrature decoding: Accurate direction detection and step counting
+ * - Button debouncing: Reliable press detection
+ * - Thread-safe: Critical sections protect shared state
+ * - Multiple instance support: Static management for hardware ISR requirements
+ * 
+ * Usage Pattern:
+ * 1. Create encoder instance with pin assignments
+ * 2. Call update() regularly from main loop  
+ * 3. Process returned Action and value_change
+ */
+
 #pragma once
 
 #include "pico/stdlib.h"
@@ -6,6 +30,16 @@
 #include "pico/critical_section.h"
 #include <cstdio>
 
+/**
+ * Interrupt-driven rotary encoder with integrated button support
+ * 
+ * Technical Details:
+ * - Quadrature Encoding: Uses both A and B pins to detect direction
+ * - Gray Code Decoding: Reliable step detection with noise immunity
+ * - ISR Processing: All encoder logic happens in GPIO interrupt handler
+ * - Critical Sections: Protect shared variables between ISR and main thread
+ * - Static Management: Hardware ISRs require static callback, single encoder supported
+ */
 class RotaryEncoder {
 public:
     enum class Action { NONE, ROTATED, PRESSED };

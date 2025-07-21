@@ -127,6 +127,7 @@
 
     // Update a knob's value from a state message (from physical knob or MIDI)
     if (line.startsWith('STATE:')) {
+      console.log(line);
       const parts = line.substring(6).split(':');
       if (parts.length === 2) {
         const cc = parseInt(parts[0], 10);

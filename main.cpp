@@ -8,10 +8,12 @@
 #include "AudioEngine.h"
 #include "I2sAudioOutput.h"
 // #include "PolyFreqModSineModule.h"
+#include "MidiSerialListener.h"
+#include "SimpleFixedOscModule.h"
 
 // --- Synth-Specific Module Headers ---
-#include "freqModSineModule.h" // Our all-in-one synth voice
-
+// #include "freqModSineModule.h"
+// Our all-in-one synth voice
 
 //==============================================================================
 // Core 1: The Audio Thread
@@ -24,7 +26,9 @@ void main_core1() {
     static AudioEngine engine(ActiveAudioOutput::NUM_CHANNELS, ActiveAudioOutput::BUFFER_SIZE);
 
     // 2. Create the "smart" synth voice module. It handles everything.
-    PolyphonicFMModule synth_voice(ActiveAudioOutput::SAMPLE_RATE);
+    // PolyphonicFMModule synth_voice(ActiveAudioOutput::SAMPLE_RATE);
+    SimpleFixedOscModule synth_voice(ActiveAudioOutput::SAMPLE_RATE);
+
 
     // 3. Add the single synth voice to the engine.
     engine.addModule(&synth_voice);
@@ -55,7 +59,7 @@ int main() {
     // IMPORTANT: Initialize the global parameter store BEFORE launching Core 1
     initialize_parameters();
 
-    sleep_ms(2000);#include "MidiSerialListener.h"
+    sleep_ms(2000);
 
     printf("LOG:--- Pico Synth (Integrated Voice) Initialized ---\n");
     printf("LOG: System clock is running at %lu kHz\n", clock_get_hz(clk_sys) / 1000);

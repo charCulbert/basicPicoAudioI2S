@@ -20,10 +20,30 @@
 #include "choc/audio/choc_SampleBuffers.h"
 #include "AudioEngine.h"
 
+// include Fix15 stuff
+#include "Fix15.h"
+
 /**
- * I2sAudioOutput is a custom hardware driver for stereo I2S audio output.
- * It uses a PIO state machine for the I2S protocol and DMA for continuous data transfer.
- * It has an interface identical to PwmAudioOutput for easy swapping.
+ * I2sAudioOutput - High-Quality I2S Audio Driver for RP2040
+ * 
+ * Professional-grade stereo I2S (Inter-IC Sound) audio output implementation using
+ * the RP2040's PIO (Programmable I/O) system for precise timing and DMA for
+ * low-latency, continuous audio streaming.
+ * 
+ * Architecture:
+ * - PIO State Machine: Generates I2S protocol timing (LRCLK, BCLK, DATA)
+ * - Double-Buffered DMA: Continuous audio transfer without CPU intervention
+ * - Fixed-Point Audio: All processing uses 16.15 format for optimal performance
+ * - Real-Time Processing: Audio engine called via DMA interrupt for low latency
+ * 
+ * Hardware Requirements:
+ * - GPIO 19: LRCLK (Left/Right Clock - Word Select)
+ * - GPIO 20: BCLK (Bit Clock - Serial Clock)  
+ * - GPIO 21: SDATA (Serial Data Output)
+ * - GPIO 26: Debug pin (timing analysis)
+ * 
+ * Compatible with standard I2S DACs, audio codecs, and digital audio interfaces.
+ * Interface matches PwmAudioOutput for easy hardware abstraction swapping.
  */
 class I2sAudioOutput {
 public:
@@ -152,25 +172,20 @@ private:
         gpio_put(DEBUG_PIN, true); // <<< ADD THIS: Set pin HIGH at the start
 
         // 1. Create a CHOC view pointing to our temporary float buffer.
-        auto float_workspace_view = choc::buffer::createInterleavedView<float>(
-            dsp_float_buffer, NUM_CHANNELS, BUFFER_SIZE
+        auto float_workspace_view = choc::buffer::createInterleavedView<fix15>(
+            dsp_fix15_buffer, NUM_CHANNELS, BUFFER_SIZE
         );
 
         // 2. Ask the AudioEngine to process its modules and fill our workspace.
-        audioEngine.processNextBlock(float_workspace_view);
+        audioEngine.processNextBlock(float_workspace_view); //make audioengine handle fix15
 
         // 3. Convert the float buffer to the uint32_t hardware buffer.
         uint32_t* hardware_buffer = audio_buffers[dma_buffer_to_fill_idx];
 
         for (int i = 0; i < BUFFER_SIZE; ++i) {
-            float sample_l_f = dsp_float_buffer[i * 2 + 0];
-            float sample_r_f = dsp_float_buffer[i * 2 + 1];
-
-            // Clip and scale to 16-bit signed integer range [-32768, 32767]
-            sample_l_f = std::max(-1.0f, std::min(1.0f, sample_l_f));
-            sample_r_f = std::max(-1.0f, std::min(1.0f, sample_r_f));
-            int16_t sample_l_s16 = static_cast<int16_t>(sample_l_f * 32767.0f);
-            int16_t sample_r_s16 = static_cast<int16_t>(sample_r_f * 32767.0f);
+            // take the fix15 samples using just the 16 leftmost/integer bits... will this work as is?
+            int16_t sample_l_s16 = dsp_fix15_buffer[i * 2 + 0];
+            int16_t sample_r_s16 = dsp_fix15_buffer[i * 2 + 1];
 
             // Pack the two 16-bit samples into a single 32-bit word.
             // Per the PIO program comment: | 31:16 sample ws=0 | 15:0 sample ws=1 |
@@ -186,7 +201,6 @@ private:
      * It immediately chains the next buffer to the DMA to ensure continuous audio.
      */
     void dma_irh() {
-
 
         // Clear the interrupt request flag
         dma_hw->ints0 = (1u << dma_chan);
@@ -209,13 +223,15 @@ private:
     uint32_t audio_buffers[2][BUFFER_SIZE];
 
     // Temporary workspace for the AudioEngine to fill with float samples
-    float dsp_float_buffer[BUFFER_SIZE * NUM_CHANNELS];
+    fix15 dsp_fix15_buffer[BUFFER_SIZE * NUM_CHANNELS];
 
     // Index of the buffer for the main loop to fill next (0 or 1).
     // `volatile` is important as it's modified by an IRQ.
     volatile int dma_buffer_to_fill_idx = 0;
 
     // --- Singleton for IRQ ---
+
+
     // This allows the static IRQ handler to call our non-static member function.
     inline static I2sAudioOutput* instance = nullptr;
     static void static_dma_irh() {

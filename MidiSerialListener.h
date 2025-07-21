@@ -1,3 +1,26 @@
+/**
+ * MidiSerialListener.h - USB Serial MIDI and Command Interface
+ * 
+ * Handles incoming data from USB serial port, supporting both:
+ * 1. MIDI messages (binary protocol) from hardware controllers and software
+ * 2. ASCII commands (text protocol) from the HTML control interface
+ * 
+ * MIDI Protocol Support:
+ * - Note On/Off messages: Forwarded to audio thread via multicore FIFO
+ * - Continuous Controller (CC): Updates global parameter store
+ * - Automatic MIDI CC to parameter mapping via parameter CC numbers
+ * 
+ * ASCII Command Support:
+ * - "SYNC_KNOBS": Sends all parameter definitions and values to HTML UI
+ * - Line-based protocol (commands end with \n or \r)
+ * 
+ * Threading Model:
+ * - Runs on control thread (Core 0) in main loop
+ * - Updates parameter store (thread-safe atomic operations)
+ * - Sends MIDI note events to audio thread (Core 1) via FIFO
+ * - Non-blocking serial reads prevent audio thread interference
+ */
+
 #pragma once
 
 #include <cstdint>
@@ -7,11 +30,34 @@
 #include "pico/multicore.h"
 #include "ParameterStore.h"
 
+// MIDI command types for inter-core communication
 enum MidiCommandType { NOTE_OFF_CMD = 0x80, NOTE_ON_CMD = 0x90 };
 
+/**
+ * Dual-protocol serial interface handler
+ * 
+ * Automatically detects and handles both MIDI (binary) and ASCII (text) data
+ * from the same USB serial connection. This allows a single connection to support:
+ * - Web browser HTML interface (ASCII commands)
+ * - MIDI controllers and software (binary MIDI)
+ * - External hardware controllers via USB-MIDI
+ */
 class MidiSerialListener {
 public:
     MidiSerialListener() : ascii_pos(0) {}
+    
+    /**
+     * Process incoming serial data (call from main control loop)
+     * 
+     * Non-blocking function that:
+     * 1. Checks for available serial data
+     * 2. Detects MIDI vs ASCII protocols automatically
+     * 3. Routes data to appropriate handler
+     * 
+     * Protocol Detection:
+     * - MIDI: Bytes with high bit set (0x80-0xFF) indicate MIDI status
+     * - ASCII: Regular text characters (0x00-0x7F) for commands
+     */
     void update() {
         int c = getchar_timeout_us(0);
         if (c == PICO_ERROR_TIMEOUT) return;

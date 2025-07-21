@@ -1,4 +1,10 @@
-// AudioEngine.h
+/**
+ * AudioEngine.h - Central Audio Processing Engine
+ * 
+ * The AudioEngine manages a collection of AudioModule instances and coordinates
+ * their processing. It is hardware-agnostic and focuses purely on audio processing.
+ * All audio uses 16.15 fixed-point arithmetic for optimal RP2040 performance.
+ */
 
 #pragma once
 
@@ -6,14 +12,23 @@
 #include <cstdint>
 #include <algorithm>
 #include "choc/audio/choc_SampleBuffers.h"
-#include "AudioModule.h" // Abstract base class for modules
-
-
+#include "AudioModule.h"
+#include "Fix15.h"
 
 /**
- * AudioEngine is a pure processing class, completely decoupled from hardware.
- * Its sole responsibility is to manage a list of AudioModules and, when requested,
- * process them to fill a provided floating-point audio buffer.
+ * AudioEngine - Central coordinator for audio processing modules
+ * 
+ * Design Philosophy:
+ * - Hardware-agnostic: doesn't know about I2S, PWM, or other hardware details
+ * - Module-based: audio processing is done by composable AudioModule instances
+ * - Fixed-point: all processing uses fix15 arithmetic for RP2040 optimization
+ * - Real-time safe: no dynamic memory allocation during processing
+ * 
+ * Processing Flow:
+ * 1. Hardware driver calls processNextBlock() with an empty buffer
+ * 2. Engine clears the buffer to ensure clean slate
+ * 3. Each registered module processes and mixes into the buffer
+ * 4. Final mixed output is returned to hardware driver
  */
 class AudioEngine {
 public:
@@ -34,7 +49,7 @@ public:
      * allowing each to add its output to the buffer.
      * @param bufferToFill An interleaved CHOC view representing the memory to write audio into.
      */
-    void processNextBlock(choc::buffer::InterleavedView<float>& bufferToFill) {
+    void processNextBlock(choc::buffer::InterleavedView<fix15>& bufferToFill) {
 
 
         // 1. Clear the buffer to ensure a clean slate for mixing.
