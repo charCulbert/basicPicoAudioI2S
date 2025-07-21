@@ -47,7 +47,7 @@ private:
     
     struct Voice {
         // DSP objects per voice
-        fixOscs::oscillator::Sine oscillator;    // High-quality sine wave generator with lookup table
+        fixOscs::oscillator::Saw oscillator;    // High-quality sine wave generator with lookup table
         Fix15VCAEnvelopeModule envelope;         // ADSR envelope generator (VCA = Voltage Controlled Amplifier)
         
         // Voice state
