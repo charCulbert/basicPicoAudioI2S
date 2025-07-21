@@ -8,7 +8,7 @@ Real-time audio synthesizer for Raspberry Pi Pico using I2S output and fixed-poi
 - **Dual-core architecture** - Core 0 handles control, Core 1 processes audio
 - **Moog ladder filter** - 4-pole resonant lowpass with per-sample responsiveness  
 - **ADSR envelopes** - Click-free with real-time parameter updates
-- **I2S audio output** - Professional digital audio via PIO state machine
+- **I2S audio output** - Digital audio via PIO state machine
 - **Low latency** - 3ms at 44.1kHz with 128-sample buffers
 
 ## Hardware Requirements

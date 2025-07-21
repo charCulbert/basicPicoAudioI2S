@@ -66,20 +66,20 @@ The project uses 16.15 signed fixed-point format (`fix15`) for audio processing:
 
 ### Filter System
 The Moog ladder filter (`FilterModule`) features:
-- **4-pole cascade** - Classic Moog topology with 24dB/octave rolloff
-- **Resonance feedback** - From final stage back to input for characteristic sound
-- **Per-sample responsiveness** - Immediate knob response for expressive playing
-- **Stability clamping** - Prevents oscillation blowup while preserving character
-- **Makeup gain** - 2.5x compensation for natural filter volume loss
+- **4-pole cascade** - 24dB/octave lowpass with Moog topology
+- **Resonance feedback** - Final stage feeds back to input
+- **Per-sample responsiveness** - Immediate knob response
+- **Stability clamping** - Prevents oscillation blowup
+- **Makeup gain** - 2.5x compensation for filter volume loss
 - **Pure fix15 processing** - 6 multiplications per sample (4 poles + resonance + gain)
 
 ### Envelope System
 The ADSR envelope (`Fix15VCAEnvelopeModule`) features:
-- **Real-time parameter updates** - Classic analog synth behavior (parameters affect currently playing notes)
+- **Real-time parameter updates** - Parameters affect currently playing notes
 - **Click-free smoothing** - 10ms parameter transitions prevent audio artifacts
 - **32-bit sample counting** - Handles envelope times up to hours without overflow
 - **RP2040 optimized** - Peak 8 float operations per sample, rest is integer math
-- **Professional envelope curves** - Linear attack/decay/release with smooth sustain tracking
+- **Linear envelope curves** - Attack/decay/release with smooth sustain tracking
 
 ### Hardware Abstraction
 - `I2sAudioOutput` vs `PwmAudioOutput` - swappable via template/typedef
@@ -135,5 +135,5 @@ The ADSR envelope (`Fix15VCAEnvelopeModule`) features:
 - Use `FilterModule` for Moog-style filtering
 - Add `filterCutoff` and `filterResonance` parameters to ParameterStore
 - Filter processes entire audio buffer with per-sample coefficient updates
-- Cutoff: 0-1 maps to ~20Hz-18kHz with musical exponential curve
+- Cutoff: 0-1 maps to ~20Hz-18kHz
 - Resonance: 0-1 maps to no feedback up to near self-oscillation

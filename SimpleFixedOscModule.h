@@ -1,17 +1,4 @@
-/**
- * SimpleFixedOscModule.h - Complete Polyphonic Synthesizer Voice
- * 
- * This module implements a complete polyphonic synthesizer with:
- * - Fixed-point sine wave oscillators (lookup table based) per voice
- * - ADSR envelope generators with smoothed parameter changes per voice
- * - Master volume control
- * - Voice allocation and stealing logic
- * - MIDI note on/off handling via dual-core FIFO communication
- * - Thread-safe parameter updates from control thread
- * 
- * All audio processing uses 16.15 fixed-point arithmetic for optimal
- * performance on the RP2040 microcontroller.
- */
+// Polyphonic synthesizer module with oscillators, envelopes, and voice allocation
 
 #pragma once
 
@@ -24,22 +11,6 @@
 #include "Fix15VCAEnvelopeModule.h"
 #include <vector>
 
-/**
- * Complete polyphonic synthesizer voice module
- * 
- * Architecture:
- * - Multiple Voices: Oscillator -> Envelope -> Master Volume -> Mixed Output
- * - Dual-core design: control thread updates parameters, audio thread processes
- * - Thread-safe parameter smoothing prevents audio artifacts
- * - MIDI communication via multicore FIFO (note on/off)
- * - Voice allocation with round-robin stealing when all voices busy
- * 
- * Parameter Flow:
- * 1. HTML/MIDI -> Parameter Store (control thread)
- * 2. Audio thread reads parameters and updates smoothers
- * 3. Smoothers provide artifact-free parameter changes
- * 4. Audio processing uses only smoothed fix15 values
- */
 class SimpleFixedOscModule : public AudioModule {
 private:
     // Number of polyphonic voices
@@ -47,8 +18,8 @@ private:
     
     struct Voice {
         // DSP objects per voice
-        fixOscs::oscillator::Saw oscillator;    // High-quality sine wave generator with lookup table
-        Fix15VCAEnvelopeModule envelope;         // ADSR envelope generator (VCA = Voltage Controlled Amplifier)
+        fixOscs::oscillator::Saw oscillator;
+        Fix15VCAEnvelopeModule envelope;
         
         // Voice state
         uint8_t midiNote = 0;
@@ -171,7 +142,7 @@ public:
         for (uint32_t f = 0; f < numFrames; ++f) {
             
             
-            // OVERFLOW FIX: Use 32-bit accumulator to prevent overflow during voice mixing
+            // Use 32-bit accumulator to prevent overflow
             int32_t mixedSample32 = 0;
             
             // Process all active voices and mix their output
@@ -223,6 +194,8 @@ private:
                 handleNoteOn(data1, velocity);
             } else if (command == 0x80 || (command == 0x90 && data2 == 0)) { // Note off
                 handleNoteOff(data1);
+            } else if (command == 0xB0 && data1 == 123) { // All Notes Off (CC 123)
+                handleAllNotesOff();
             }
         }
         
@@ -273,6 +246,15 @@ private:
             if (voice.isActive && voice.midiNote == note) {
                 voice.noteOff();
                 return; // A note should only be active on one voice at a time
+            }
+        }
+    }
+    
+    void handleAllNotesOff() {
+        // Turn off all active voices immediately
+        for (auto& voice : voices) {
+            if (voice.isActive) {
+                voice.noteOff();
             }
         }
     }

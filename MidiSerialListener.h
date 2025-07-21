@@ -31,7 +31,7 @@
 #include "ParameterStore.h"
 
 // MIDI command types for inter-core communication
-enum MidiCommandType { NOTE_OFF_CMD = 0x80, NOTE_ON_CMD = 0x90 };
+enum MidiCommandType { NOTE_OFF_CMD = 0x80, NOTE_ON_CMD = 0x90, ALL_NOTES_OFF_CMD = 0xB0 };
 
 /**
  * Dual-protocol serial interface handler
@@ -85,6 +85,14 @@ private:
         if (command == 0x90 && data2 > 0) sendNoteToCore1(NOTE_ON_CMD, data1, data2);
         else if (command == 0x80 || (command == 0x90 && data2 == 0)) sendNoteToCore1(NOTE_OFF_CMD, data1, data2);
         else if (command == 0xB0) {
+            // Handle All Notes Off (CC 123)
+            if (data1 == 123) {
+                sendAllNotesOffToCore1();
+                printf("LOG:All Notes Off\n");
+                fflush(stdout);
+                return;
+            }
+            
             for (auto* p : g_synth_parameters) {
                 if (p->getCcNumber() == data1) {
                     p->setNormalizedValue(data2 / 127.0f);
@@ -116,6 +124,11 @@ private:
 
     void sendNoteToCore1(uint8_t command, uint8_t data1, uint8_t data2) {
         uint32_t packet = (command << 24) | (data1 << 16) | (data2 << 8);
+        multicore_fifo_push_blocking(packet);
+    }
+    
+    void sendAllNotesOffToCore1() {
+        uint32_t packet = (ALL_NOTES_OFF_CMD << 24) | (123 << 16) | (0 << 8);
         multicore_fifo_push_blocking(packet);
     }
 

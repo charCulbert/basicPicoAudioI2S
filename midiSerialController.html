@@ -57,6 +57,7 @@
     <h1>Pico MIDI Console</h1>
     <div class="header-controls">
       <button id="theme-toggle">Toggle Theme</button>
+      <button id="all-notes-off">All Notes Off</button>
       <button id="connect">Connect to Pico</button>
     </div>
   </header>
@@ -103,6 +104,7 @@
 
   const log = document.getElementById('log');
   const connectButton = document.getElementById('connect');
+  const allNotesOffButton = document.getElementById('all-notes-off');
   const syncKnobsButton = document.getElementById('sync-knobs');
   const knobConfigText = document.getElementById('knob-config');
   const knobContainer = document.getElementById('knob-container');
@@ -229,10 +231,10 @@
     }
   };
 
-  // --- Web MIDI API Logic (unchanged) ---
-  function forwardMidiMessage(event) {
+  // --- Web MIDI API Logic ---
+  async function forwardMidiMessage(event) {
     if (writer) {
-      writer.write(event.data);
+      await writer.write(event.data);
       appendToLog(`🎹 Ext MIDI: ${Array.from(event.data).map(b => b.toString(16).padStart(2, '0')).join(' ')}\n`);
     }
   }
@@ -309,8 +311,8 @@
   function changeOctave(delta) { currentOctave = Math.max(0, Math.min(7, currentOctave + delta)); generateKeyboard(); }
   function updateKeyboardTitle() { document.getElementById('keyboard-title').textContent = `On-Screen Keyboard [C${currentOctave} - B${currentOctave + 2}]`; }
   function generateKeyboard() { const piano = document.getElementById('piano-container'); piano.innerHTML = ''; const startNote = 12 * (currentOctave + 1); const endNote = startNote + 35; const whiteKeyCount = 21; const whiteKeyWidth = 100 / whiteKeyCount; const blackKeyWidth = whiteKeyWidth * 0.6; let whiteKeyIndex = 0; for (let note = startNote; note <= endNote; note++) { const key = document.createElement('div'); const isBlack = [1, 3, 6, 8, 10].includes((note - startNote) % 12); key.className = `key ${isBlack ? 'black' : 'white'}`; key.dataset.note = note; if (isBlack) { const pos = (whiteKeyIndex - 1) * whiteKeyWidth + whiteKeyWidth - (blackKeyWidth / 2); key.style.left = `${pos}%`; key.style.width = `${blackKeyWidth}%`; } else { key.style.width = `${whiteKeyWidth}%`; if (note % 12 === 0) key.textContent = `C${Math.floor(note / 12) - 1}`; whiteKeyIndex++; } piano.appendChild(key); } updateKeyboardTitle(); }
-  function playNote(element) { if (!element?.classList.contains('key')) return; const note = parseInt(element.dataset.note); if(writer) writer.write(new Uint8Array([0x90, note, 127])); element.classList.add('active'); lastPlayedKeyElement = element; }
-  function stopNote(element) { if (!element?.classList.contains('key')) return; const note = parseInt(element.dataset.note); if(writer) writer.write(new Uint8Array([0x90, note, 0])); element.classList.remove('active'); }
+  async function playNote(element) { if (!element?.classList.contains('key')) return; const note = parseInt(element.dataset.note); if(writer) await writer.write(new Uint8Array([0x90, note, 127])); element.classList.add('active'); lastPlayedKeyElement = element; }
+  async function stopNote(element) { if (!element?.classList.contains('key')) return; const note = parseInt(element.dataset.note); if(writer) await writer.write(new Uint8Array([0x90, note, 0])); element.classList.remove('active'); }
   document.getElementById('piano-container').addEventListener('pointerdown', e => { isPointerDown = true; playNote(e.target); });
   document.getElementById('piano-container').addEventListener('pointerover', e => { if (isPointerDown && e.target !== lastPlayedKeyElement) { stopNote(lastPlayedKeyElement); playNote(e.target); } });
   document.addEventListener('pointerup', () => { isPointerDown = false; stopNote(lastPlayedKeyElement); lastPlayedKeyElement = null; });
@@ -323,6 +325,13 @@
     document.getElementById('octave-down').onclick = () => changeOctave(-1);
     document.getElementById('octave-up').onclick = () => changeOctave(1);
     syncKnobsButton.onclick = () => sendCommand('SYNC_KNOBS');
+    allNotesOffButton.onclick = async () => {
+      if (writer) {
+        // Send All Notes Off MIDI CC (CC 123 with value 0)
+        await writer.write(new Uint8Array([0xB0, 123, 0]));
+        appendToLog('🔇 All Notes Off sent\n');
+      }
+    };
   };
 </script>
 </body>
