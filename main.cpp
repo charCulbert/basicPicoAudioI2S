@@ -6,7 +6,6 @@
 #include "AudioEngine.h"
 #include "I2sAudioOutput.h"
 #include "ParameterStore.h"
-// #include "PolyFreqModSineModule.h"
 #include "FilterModule.h"
 #include "GainModule.h"
 #include "MidiSerialListener.h"
