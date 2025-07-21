@@ -29,7 +29,12 @@
 #include <algorithm>
 
 /**
- * Fixed-point ADSR envelope generator with VCA functionality
+ * ADSR envelope generator with VCA functionality
+ * 
+ * Uses hybrid approach for timing:
+ * - Audio signals: fix15 for performance
+ * - Envelope timing: 32-bit sample counting with floating-point increments
+ * - Avoids fix15 overflow issues while maintaining audio thread performance
  * 
  * This module can operate in two modes:
  * 1. Pure envelope generator: Call getNextValue() to get envelope level
@@ -48,33 +53,49 @@ public:
     Fix15VCAEnvelopeModule(float sampleRate) : sampleRate(sampleRate) {
         s_sustainLevel.reset(sampleRate, 0.01); // 10ms smoothing for sustain changes
         s_sustainLevel.setValue(sustainLevel);
+        
+        // Initialize smoothed timing parameters (50ms smoothing to prevent clicks)
+        s_attackSamples.reset(sampleRate, 0.05);
+        s_decaySamples.reset(sampleRate, 0.05);
+        s_releaseSamples.reset(sampleRate, 0.05);
+        
         updateSampleCounts();
+        
+        // Initialize smoothed values with initial sample counts
+        s_attackSamples.setValue((float)attackSamples);
+        s_decaySamples.setValue((float)decaySamples);
+        s_releaseSamples.setValue((float)releaseSamples);
     }
 
     void noteOn() {
         currentLevel = FIX15_ZERO;
         state = State::Attack;
-        samplesInCurrentStage = 0;
+        sampleCounter = 0;
     }
 
     void noteOff() {
         if (state != State::Idle) {
             releaseStartLevel = currentLevel; // Remember level when release started
             state = State::Release;
-            samplesInCurrentStage = 0;
+            sampleCounter = 0; // Reset counter for release phase
         }
     }
 
     bool isActive() const { return state != State::Idle; }
+    State getState() const { return state; }
 
     void setAttackTime(float seconds) {
         attackTimeSeconds = std::max(0.001f, seconds);
         updateSampleCounts();
+        // Update smoothed sample count for real-time changes
+        s_attackSamples.setTargetValue((float)attackSamples);
     }
 
     void setDecayTime(float seconds) {
         decayTimeSeconds = std::max(0.001f, seconds);
         updateSampleCounts();
+        // Update smoothed sample count for real-time changes
+        s_decaySamples.setTargetValue((float)decaySamples);
     }
 
     void setSustainLevel(float level) {
@@ -91,6 +112,8 @@ public:
     void setReleaseTime(float seconds) {
         releaseTimeSeconds = std::max(0.001f, seconds);
         updateSampleCounts();
+        // Update smoothed sample count for real-time changes
+        s_releaseSamples.setTargetValue((float)releaseSamples);
     }
 
     void process(choc::buffer::InterleavedView<fix15>& buffer) override {
@@ -112,41 +135,51 @@ public:
     }
 
     fix15 getNextValue() {
-        // Update smoothed sustain level
+        // Update smoothed sustain level and timing parameters
         sustainLevel = s_sustainLevel.getNextValue();
+        
+        // Get current smoothed sample counts (real-time parameter changes)
+        float currentAttackSamples = s_attackSamples.getNextValue();
+        float currentDecaySamples = s_decaySamples.getNextValue();
+        float currentReleaseSamples = s_releaseSamples.getNextValue();
 
         switch (state) {
             case State::Attack:
-                if (attackSamples > 0) {
-                    // Calculate progress using pure fix15: samplesInCurrentStage / attackSamples
-                    currentLevel = divfix15(int2fix15(samplesInCurrentStage), int2fix15(attackSamples));
-                    if (samplesInCurrentStage >= attackSamples) {
-                        currentLevel = int2fix15(1);
+                if (currentAttackSamples > 1.0f) {
+                    // Use smoothed attack time for real-time parameter changes
+                    float progress = (float)sampleCounter / currentAttackSamples;
+                    progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
+                    currentLevel = float2fix15(progress);
+                    
+                    sampleCounter++;
+                    if (sampleCounter >= (uint32_t)currentAttackSamples) {
+                        currentLevel = FIX15_ONE;
                         state = State::Decay;
-                        samplesInCurrentStage = 0;
-                    } else {
-                        samplesInCurrentStage++;
+                        sampleCounter = 0; // Reset for decay phase
                     }
                 } else {
                     // Instant attack
-                    currentLevel = int2fix15(1);
+                    currentLevel = FIX15_ONE;
                     state = State::Decay;
-                    samplesInCurrentStage = 0;
+                    sampleCounter = 0;
                 }
                 break;
                 
             case State::Decay:
-                if (decaySamples > 0) {
-                    // Calculate progress using pure fix15: samplesInCurrentStage / decaySamples
-                    fix15 progress = divfix15(int2fix15(samplesInCurrentStage), int2fix15(decaySamples));
-                    // level = 1.0 - progress * (1.0 - sustainLevel) = 1 - progress + progress * sustainLevel
-                    fix15 one = int2fix15(1);
-                    currentLevel = one - progress + multfix15(progress, sustainLevel);
-                    if (samplesInCurrentStage >= decaySamples || currentLevel <= sustainLevel) {
+                if (currentDecaySamples > 1.0f) {
+                    // Use smoothed decay time for real-time parameter changes
+                    float progress = (float)sampleCounter / currentDecaySamples;
+                    progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
+                    float sustainFloat = fix152float(sustainLevel);
+                    // Interpolate from 1.0 down to sustain level
+                    float levelFloat = 1.0f - (progress * (1.0f - sustainFloat));
+                    currentLevel = float2fix15(levelFloat);
+                    
+                    sampleCounter++;
+                    if (sampleCounter >= (uint32_t)currentDecaySamples) {
                         currentLevel = sustainLevel;
                         state = State::Sustain;
-                    } else {
-                        samplesInCurrentStage++;
+                        // No need to reset sampleCounter for sustain phase
                     }
                 } else {
                     // Instant decay
@@ -158,24 +191,26 @@ public:
             case State::Sustain:
                 // Smoothly track sustain level changes
                 currentLevel = sustainLevel;
-                // Force to true silence if sustain target is zero (fix15 smoother may never reach exactly zero)
+                // Force to true silence if sustain target is zero
                 if (s_sustainLevel.getTargetValue() == FIX15_ZERO) {
                     currentLevel = FIX15_ZERO;
                 }
                 break;
                 
             case State::Release:
-                if (releaseSamples > 0) {
-                    // Calculate progress using pure fix15: samplesInCurrentStage / releaseSamples
-                    fix15 progress = divfix15(int2fix15(samplesInCurrentStage), int2fix15(releaseSamples));
-                    // level = releaseStartLevel * (1.0 - progress)
-                    fix15 one = int2fix15(1);
-                    currentLevel = multfix15(releaseStartLevel, (one - progress));
-                    if (samplesInCurrentStage >= releaseSamples || currentLevel <= FIX15_ZERO) {
+                if (currentReleaseSamples > 1.0f) {
+                    // Use smoothed release time for real-time parameter changes
+                    float progress = (float)sampleCounter / currentReleaseSamples;
+                    progress = std::min(progress, 1.0f); // Clamp to prevent overshoot
+                    float releaseStartFloat = fix152float(releaseStartLevel);
+                    // Interpolate from release start level down to 0
+                    float levelFloat = releaseStartFloat * (1.0f - progress);
+                    currentLevel = float2fix15(levelFloat);
+                    
+                    sampleCounter++;
+                    if (sampleCounter >= (uint32_t)currentReleaseSamples) {
                         currentLevel = FIX15_ZERO;
                         state = State::Idle;
-                    } else {
-                        samplesInCurrentStage++;
                     }
                 } else {
                     // Instant release
@@ -190,15 +225,15 @@ public:
                 break;
         }
 
-        
         return currentLevel;
     }
 
 private:
     void updateSampleCounts() {
-        attackSamples = (int)(attackTimeSeconds * sampleRate);
-        decaySamples = (int)(decayTimeSeconds * sampleRate);
-        releaseSamples = (int)(releaseTimeSeconds * sampleRate);
+        attackSamples = (uint32_t)(attackTimeSeconds * sampleRate);
+        decaySamples = (uint32_t)(decayTimeSeconds * sampleRate);
+        releaseSamples = (uint32_t)(releaseTimeSeconds * sampleRate);
+        
     }
 
     float sampleRate;
@@ -207,11 +242,16 @@ private:
     fix15 sustainLevel = float2fix15(0.7f);
     Fix15SmoothedValue s_sustainLevel;
     
-    // Counter-based approach
-    int samplesInCurrentStage = 0;
-    int attackSamples = 441;      // 0.01s at 44.1kHz
-    int decaySamples = 8820;      // 0.2s at 44.1kHz  
-    int releaseSamples = 22050;   // 0.5s at 44.1kHz
+    // Smoothed timing parameters for click-free real-time updates
+    SmoothedValue<float> s_attackSamples;
+    SmoothedValue<float> s_decaySamples; 
+    SmoothedValue<float> s_releaseSamples;
+    
+    // 32-bit sample counting approach - handles long envelopes without overflow
+    uint32_t sampleCounter = 0;        // Current sample count in current envelope phase
+    uint32_t attackSamples = 441;      // 0.01s at 44.1kHz
+    uint32_t decaySamples = 8820;      // 0.2s at 44.1kHz  
+    uint32_t releaseSamples = 22050;   // 0.5s at 44.1kHz
     fix15 releaseStartLevel = FIX15_ZERO; // Level when release started
     
     float attackTimeSeconds = 0.01f;

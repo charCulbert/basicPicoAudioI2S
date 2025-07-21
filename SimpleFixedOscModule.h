@@ -53,6 +53,7 @@ private:
     Parameter* p_sustain = nullptr;
     Parameter* p_release = nullptr;
     
+    
     // === Audio Thread Smoothers ===
     // These convert parameter changes into smooth audio-rate transitions
     // Prevents clicks/pops when parameters change during audio processing
@@ -148,15 +149,13 @@ private:
                 lastSustain = sustainValue;
             }
             
-            // Always update sustain (smoothed)
+            // Always update sustain (smoothed) - safe to change during any phase
             envelope.setSustainLevel(sustainValue);
             
-            // Only update A/D/R when envelope is not active (prevents crackling mid-note)
-            if (!envelope.isActive()) {
-                envelope.setAttackTime(p_attack->getValue());
-                envelope.setDecayTime(p_decay->getValue());
-                envelope.setReleaseTime(p_release->getValue());
-            }
+            // Always update envelope parameters - classic analog synth behavior with smoothing
+            envelope.setAttackTime(p_attack->getValue());
+            envelope.setDecayTime(p_decay->getValue());
+            envelope.setReleaseTime(p_release->getValue());
         }
         
         // Handle MIDI frequency changes from multicore FIFO
