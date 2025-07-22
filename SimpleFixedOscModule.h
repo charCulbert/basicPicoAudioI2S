@@ -14,7 +14,7 @@
 class SimpleFixedOscModule : public AudioModule {
 private:
     // Number of polyphonic voices
-    static constexpr int NUM_VOICES = 10;
+    static constexpr int NUM_VOICES = 8;
     
     struct Voice {
         // DSP objects per voice

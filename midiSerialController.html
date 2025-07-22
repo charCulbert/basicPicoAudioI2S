@@ -18,17 +18,32 @@
       --accent-color: #999999; --active-color: #444444; --subtle-bg: #2a2a2a;
     }
     * { box-sizing: border-box; }
-    body { font-family: var(--font-family); background-color: var(--bg-color); color: var(--fg-color); margin: 0; padding: 2em; transition: background-color 0.2s, color 0.2s; }
-    .app-container { max-width: 1100px; margin: 0 auto; }
-    header, .section-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1em; margin-bottom: 2em; }
-    .section-header { margin-top: 2em; margin-bottom: 1em; }
-    h1 { margin: 0; font-size: 1.5em; font-weight: 600; }
-    h3 { font-size: 1em; font-weight: 600; margin: 0; }
+    body { font-family: var(--font-family); background-color: var(--bg-color); color: var(--fg-color); margin: 0; padding: 0; transition: background-color 0.2s, color 0.2s; }
+    .app-container { display: flex; min-height: 100vh; }
+    .app-container.sidebar-hidden { display: block; }
+    .main-content { flex: 1; padding: 2em; overflow: hidden; }
+    .main-content.centered { max-width: 1100px; margin: 0 auto; }
+    .sidebar { width: 300px; background-color: var(--bg-color); overflow-y: auto; border-left: 1px solid var(--border-color); transition: transform 0.3s ease; }
+    .sidebar.hidden { display: none; }
+    .sidebar-toggle { position: fixed; top: 10px; right: 15px; z-index: 1000; background: none; border: none; color: var(--accent-color); font-size: 0.8em; cursor: pointer; opacity: 0.7; transition: opacity 0.2s; padding: 0; }
+    .sidebar-toggle:hover { opacity: 1; color: var(--fg-color); }
+    @media (max-width: 1200px) { .sidebar { width: 250px; } }
+    @media (max-width: 768px) { 
+      .app-container { flex-direction: column; }
+      .sidebar { width: 100%; height: 200px; border-left: none; border-top: 1px solid var(--border-color); }
+      .main-content { padding: 1em; }
+    }
+    header, .section-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5em; margin-bottom: 1em; }
+    .section-header { margin-top: 1.5em; margin-bottom: 0.8em; }
+    header { margin-bottom: 1.5em; }
+    h1 { margin: 0; font-size: 1.2em; font-weight: 600; }
+    h3 { font-size: 0.95em; font-weight: 600; margin: 0; }
     .header-controls { display: flex; gap: 1em; }
-    button { background-color: transparent; color: var(--fg-color); border: 1px solid var(--accent-color); padding: 0.6em 1.2em; cursor: pointer; font-family: var(--font-family); font-size: 0.9em; transition: all 0.1s; }
-    button:hover { background-color: var(--fg-color); color: var(--bg-color); }
+    button { background-color: var(--bg-color); color: var(--fg-color); border: 1px solid var(--border-color); padding: 0.5em 1em; cursor: pointer; font-family: var(--font-family); font-size: 0.85em; transition: all 0.1s; }
+    button:hover { background-color: var(--active-color); }
     button:disabled { cursor: not-allowed; opacity: 0.5; }
     button#connect.connected { background-color: var(--fg-color); color: var(--bg-color); }
+    select { background-color: var(--bg-color); color: var(--fg-color); border: 1px solid var(--border-color); padding: 0.5em; font-family: var(--font-family); font-size: 0.85em; }
     .piano-container { position: relative; display: flex; height: 160px; width: 100%; user-select: none; -webkit-user-select: none; touch-action: none; }
     .key { border: 1px solid var(--accent-color); border-top: none; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; font-weight: 400; font-size: 0.8em; color: var(--accent-color); }
     .key.white { width: 100%; height: 100%; background-color: var(--bg-color); border-left: none; }
@@ -47,38 +62,50 @@
     #knob-config-area { display: flex; flex-direction: column; gap: 0.5em;}
     #knob-config-area textarea { width: 100%; height: 120px; font-family: var(--font-family); font-size: 0.9em; padding: 0.5em; border: 1px solid var(--border-color); background-color: var(--subtle-bg); color: var(--fg-color); }
     #midi-input-select { font-family: var(--font-family); padding: 0.5em; width: 100%; background-color: var(--subtle-bg); color: var(--fg-color); border: 1px solid var(--border-color); }
-    #log { background: var(--subtle-bg); border: 1px solid var(--border-color); padding: 1em; height: 200px; overflow: auto; white-space: pre-wrap; line-height: 1.6; font-size: 0.9em; margin-top: 1em; }
+    #log { background: var(--bg-color); padding: 0.5em; height: 100%; overflow: auto; white-space: pre-wrap; line-height: 1.4; font-size: 0.8em; font-family: var(--font-family); }
+    .sequencer-content { display: block; }
+    .sequencer-controls { display: flex; justify-content: center; align-items: center; gap: 1.5em; margin-bottom: 1.5em; padding: 1em; background: var(--subtle-bg); border: 1px solid var(--border-color); border-radius: 4px; }
+    .seq-transport { display: flex; gap: 0.3em; }
+    .seq-transport button { min-width: 60px; height: 36px; border-radius: 3px; font-size: 0.85em; font-weight: 600; }
+    .seq-tempo { display: flex; align-items: center; gap: 0.5em; }
+    .seq-tempo input { width: 70px; height: 36px; padding: 0.4em; font-family: var(--font-family); background: var(--subtle-bg); color: var(--fg-color); border: 1px solid var(--border-color); border-radius: 3px; text-align: center; }
+    .sequencer-tracks { border: 1px solid var(--border-color); }
+    .seq-track { display: flex; align-items: center; border-bottom: 1px solid var(--border-color); min-height: 50px; }
+    .seq-track:last-child { border-bottom: none; }
+    .seq-track-label { width: 150px; padding: 0.5em; background: var(--subtle-bg); border-right: 1px solid var(--border-color); display: flex; gap: 0.4em; align-items: center; flex-wrap: wrap; }
+    .seq-param { display: flex; flex-direction: column; align-items: center; gap: 0.2em; }
+    .seq-param-label { font-size: 0.6em; opacity: 0.7; text-transform: uppercase; }
+    .seq-number-input { width: 35px; height: 20px; padding: 0; font-family: var(--font-family); font-size: 0.7em; background: var(--bg-color); color: var(--fg-color); border: 1px solid var(--border-color); text-align: center; cursor: ns-resize; user-select: none; }
+    .seq-number-input:hover { background: var(--active-color); }
+    .seq-track-btn { padding: 0.1em 0.3em; font-size: 0.7em; min-width: auto; height: auto; }
+    .seq-steps { display: flex; flex: 1; }
+    .seq-step { width: 40px; height: 40px; border-right: 1px solid var(--border-color); cursor: pointer; display: flex; align-items: center; justify-content: center; background: var(--bg-color); transition: all 0.1s; position: relative; }
+    .seq-step:last-child { border-right: none; }
+    .seq-step.active { background: #ff6b35; color: white; }
+    .seq-step.vel-half { background: #ff9f7a; color: white; } /* Half velocity - lighter orange */
+    .seq-step.vel-full { background: #ff6b35; color: white; } /* Full velocity - bright orange */
+    .seq-step.playing { animation: pulse 0.1s; }
+    .seq-step.beat-1, .seq-step.beat-5, .seq-step.beat-9, .seq-step.beat-13 { border-left: 2px solid var(--accent-color); }
+    .seq-step:hover:not(.active) { background: var(--active-color); }
+    .seq-step-number { font-size: 0.7em; }
+    .seq-position-indicator { height: 4px; background: #ff6b6b; position: absolute; top: 0; left: 0; right: 0; opacity: 0; transition: opacity 0.1s; }
+    .seq-step.current-step .seq-position-indicator { opacity: 1; }
+    @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
   </style>
 </head>
 <body>
 
-<div class="app-container">
-  <header>
-    <h1>Pico MIDI Console</h1>
-    <div class="header-controls">
-      <button id="theme-toggle">Toggle Theme</button>
-      <button id="all-notes-off">All Notes Off</button>
-      <button id="connect">Connect to Pico</button>
-    </div>
-  </header>
-
-  <main>
-    <div class="section-header">
-      <h3>External MIDI Input</h3>
-    </div>
-    <div>
-      <select id="midi-input-select" disabled><option>Connect to Pico to enable MIDI</option></select>
-      <p id="midi-status" style="font-size: 0.9em; opacity: 0.7;"></p>
-    </div>
-
-    <div class="section-header">
-      <h3 id="keyboard-title">On-Screen Keyboard</h3>
-      <div class="octave-controls">
-        <button id="octave-down">< Octave</button>
-        <button id="octave-up">Octave ></button>
+<div class="app-container sidebar-hidden">
+  <button class="sidebar-toggle" id="sidebar-toggle">Serial Log</button>
+  
+  <div class="main-content centered">
+    <header>
+      <div class="header-controls">
+        <button id="connect">Connect to Pico</button>
+        <button id="theme-toggle">Toggle Theme</button>
+        <select id="midi-input-select" disabled><option>MIDI Input</option></select>
       </div>
-    </div>
-    <div class="piano-container" id="piano-container"></div>
+    </header>
 
     <div class="section-header"><h3>MIDI CC Controls</h3></div>
     <p id="rotary-status" style="margin: -1em 0 1em 0; font-size: 0.9em; opacity: 0.8;"> </p>
@@ -90,9 +117,44 @@
       </div>
     </div>
 
-    <div class="section-header"><h3>Serial Log</h3></div>
+    <div class="section-header">
+      <h3 id="keyboard-title">On-Screen Keyboard</h3>
+      <div class="octave-controls">
+        <button id="octave-down">< Octave</button>
+        <button id="octave-up">Octave ></button>
+        <button id="all-notes-off">All Notes Off</button>
+      </div>
+    </div>
+    <div class="piano-container" id="piano-container"></div>
+
+    <div class="sequencer-container">
+      <div class="section-header">
+        <h3>SEQ</h3>
+      </div>
+      <div class="sequencer-content" id="sequencer-content">
+        <div class="sequencer-controls">
+          <div class="seq-transport">
+            <button id="seq-play">▶ Play</button>
+            <button id="seq-reset">⏮ Reset</button>
+          </div>
+          <div class="seq-tempo">
+            <label>BPM:</label>
+            <input type="number" id="seq-tempo" value="120" min="60" max="200">
+          </div>
+          <button id="seq-clear">Clear</button>
+          <button id="seq-add-track">+ Track</button>
+        </div>
+        <div class="sequencer-tracks" id="sequencer-tracks"></div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="sidebar hidden" id="sidebar">
+    <div style="padding: 0.5em; border-bottom: 1px solid var(--border-color); font-size: 0.8em;">
+      <label style="cursor: pointer;"><input type="checkbox" id="raw-log-toggle"> Raw Mode</label>
+    </div>
     <pre id="log"></pre>
-  </main>
+  </div>
 </div>
 
 <script>
@@ -101,6 +163,21 @@
   let lineBuffer = '';
   let isParsingKnobs = false;
   let currentOctave = 3, isPointerDown = false, lastPlayedKeyElement = null;
+  
+  // --- Sequencer State ---
+  let sequencerTrackData = [
+    { note: 60, duration: 150, chance: 100, pattern: Array(16).fill(0) } // 0=off, 64=half, 127=full
+  ];
+  let sequencerPlaying = false;
+  let sequencerCurrentStep = 0;
+  let sequencerNextStepTime = 0;
+  let sequencerTimeoutId = null;
+  const noteOffTimeouts = new Map(); // Track pending note-off timeouts
+  let sequencerInterval = null;
+  let activeNotes = new Set();
+  let rawLogMode = true; // Start in raw mode
+  let lastStateMessage = null;
+  let stateMessageCount = 1;
 
   const log = document.getElementById('log');
   const connectButton = document.getElementById('connect');
@@ -109,21 +186,95 @@
   const knobConfigText = document.getElementById('knob-config');
   const knobContainer = document.getElementById('knob-container');
   const midiSelect = document.getElementById('midi-input-select');
-  const midiStatus = document.getElementById('midi-status');
   const rotaryStatus = document.getElementById('rotary-status');
+  
+  // --- Sequencer Elements ---
+  const seqPlayButton = document.getElementById('seq-play');
+  const seqResetButton = document.getElementById('seq-reset');
+  const seqClearButton = document.getElementById('seq-clear');
+  const seqAddTrackButton = document.getElementById('seq-add-track');
+  const seqTempoInput = document.getElementById('seq-tempo');
+  const sequencerTracksContainer = document.getElementById('sequencer-tracks');
+  const sequencerContent = document.getElementById('sequencer-content');
+  
+  
+  // Sidebar elements
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  const sidebar = document.getElementById('sidebar');
+  const appContainer = document.querySelector('.app-container');
+  const mainContent = document.querySelector('.main-content');
+  const rawLogToggle = document.getElementById('raw-log-toggle');
 
   // --- Core Serial Communication & Parsing ---
-  function appendToLog(text) { log.textContent += text; log.scrollTop = log.scrollHeight; }
+  function appendToLog(text) { 
+    log.textContent += text; 
+    // Force scroll to bottom immediately and after DOM update
+    log.scrollTop = log.scrollHeight;
+    requestAnimationFrame(() => {
+      log.scrollTop = log.scrollHeight;
+    });
+    // Backup scroll after a short delay in case of timing issues
+    setTimeout(() => {
+      log.scrollTop = log.scrollHeight;
+    }, 10);
+  }
+  
+  function appendToLogGrouped(text, isStateLine = false) {
+    if (rawLogMode) {
+      if (isStateLine) {
+        const cc = text.split(':')[1];
+        if (lastStateMessage && lastStateMessage.includes(`STATE:${cc}:`)) {
+          // Replace the last line with a grouped version
+          const lines = log.textContent.split('\n');
+          if (lines.length > 0) {
+            lines[lines.length - 2] = `STATE:${cc}:... (${stateMessageCount + 1} changes)`;
+            log.textContent = lines.join('\n');
+            // Ensure scroll after replacing content
+            log.scrollTop = log.scrollHeight;
+            requestAnimationFrame(() => {
+              log.scrollTop = log.scrollHeight;
+            });
+          }
+          stateMessageCount++;
+          lastStateMessage = text;
+        } else {
+          appendToLog(text);
+          lastStateMessage = text;
+          stateMessageCount = 1;
+        }
+      } else {
+        appendToLog(text);
+        lastStateMessage = null;
+      }
+    } else {
+      appendToLog(text);
+    }
+  }
 
   function processIncomingLine(line) {
+    if (rawLogMode) {
+      // Raw mode: use smart grouping for STATE messages
+      if (line.startsWith('STATE:')) {
+        appendToLogGrouped(`${line}\n`, true);
+      } else {
+        appendToLogGrouped(`${line}\n`, false);
+      }
+    }
+    
+    // Process for UI updates (always run)
     if (line.startsWith('LOG:')) {
-      appendToLog(line.substring(4) + '\n');
+      if (!rawLogMode) {
+        appendToLog(line.substring(4) + '\n');
+      }
       return;
     }
 
     // Announce which parameter the physical knob is controlling
     if (line.startsWith('SELECT:')) {
       rotaryStatus.textContent = `Physical Knob controlling: ${line.substring(7)}`;
+      if (!rawLogMode) {
+        appendToLog(`🎛️ Physical knob: ${line.substring(7)}\n`);
+      }
       return;
     }
 
@@ -138,6 +289,9 @@
         if (knob && knob.updateUI) {
           knob.updateUI(normValue * 127, false); // Convert normalized [0,1] to MIDI [0,127]
         }
+        if (!rawLogMode) {
+          appendToLog(`🎚️ CC${cc}: ${Math.round(normValue * 127)}\n`);
+        }
       }
       return;
     }
@@ -145,39 +299,38 @@
     // Handle the UI sync protocol
     if (line.startsWith('KNOB_UPDATE_START')) {
       isParsingKnobs = true;
-      // When sync starts, immediately clear the UI and the text area
       knobContainer.innerHTML = '';
       knobConfigText.value = '';
-      appendToLog('🔄 Receiving knob configuration from Pico...\n');
+      if (!rawLogMode) {
+        appendToLog('🔄 Syncing knobs...\n');
+      }
       return;
     }
     if (line.startsWith('KNOB_UPDATE_END')) {
       isParsingKnobs = false;
-      appendToLog('✅ Sync complete. UI is up to date.\n');
-      // No more need to click a button. The process is now automatic.
+      if (!rawLogMode) {
+        appendToLog('✅ Sync complete\n');
+      }
       return;
     }
 
-    // ========================= MODIFIED LOGIC =========================
     if (isParsingKnobs && line.startsWith('CC_DEF:')) {
       const parts = line.split(':');
       if (parts.length === 3) {
         const cc = parseInt(parts[1], 10);
         const name = parts[2];
-
-        // Add the definition to the text area for user reference
         knobConfigText.value += `${cc}:${name}\n`;
-
-        // **Immediately create the knob on the UI**
         if (!isNaN(cc) && cc >= 0 && cc <= 127) {
           createKnob(cc, name);
         }
       }
       return;
     }
-    // =================================================================
 
-    appendToLog(`[RAW] ${line}\n`);
+    // For other messages in decoded mode
+    if (!rawLogMode) {
+      appendToLog(`[${line}]\n`);
+    }
   }
 
   // ... (readLoop, sendCommand, connectButton.onclick are unchanged) ...
@@ -222,10 +375,16 @@
         reader = port.readable.getReader();
         connectButton.textContent = 'Disconnect';
         connectButton.classList.add('connected');
-        [syncKnobsButton, midiSelect].forEach(el => el.disabled = false);
-        midiSelect.innerHTML = '<option value="">Select a MIDI Input</option>';
-        initMidi();
+        syncKnobsButton.disabled = false;
+        midiSelect.disabled = false;
         appendToLog("🔌 Connected.\n");
+        
+        // Auto-sync knobs when Pico connects
+        setTimeout(() => {
+          sendCommand('SYNC_KNOBS');
+          appendToLog('🔄 Auto-syncing knobs on connect\n');
+        }, 500); // Small delay to ensure connection is stable
+        
         readLoop();
       } catch (error) { appendToLog(`Error: ${error.message}\n`); }
     }
@@ -240,17 +399,24 @@
   }
   function onMidiSuccess(access) {
     midiAccess = access;
+    // Clear existing options except the placeholder
+    midiSelect.innerHTML = '<option value="">MIDI Input</option>';
+    
     if (midiAccess.inputs.size > 0) {
-      midiStatus.textContent = "Select a MIDI device from the list above.";
       midiAccess.inputs.forEach(input => {
-        midiSelect.innerHTML += `<option value="${input.id}">${input.name}</option>`;
+        const option = document.createElement('option');
+        option.value = input.id;
+        option.textContent = input.name;
+        midiSelect.appendChild(option);
       });
-    } else { midiStatus.textContent = "No MIDI input devices found."; }
+    }
   }
   function initMidi() {
     if (navigator.requestMIDIAccess) {
-      navigator.requestMIDIAccess().then(onMidiSuccess, () => midiStatus.textContent = "Web MIDI API access denied.");
-    } else { midiStatus.textContent = "Web MIDI is not supported in this browser."; }
+      navigator.requestMIDIAccess().then(onMidiSuccess, () => console.log("Web MIDI API access denied."));
+    } else { 
+      console.log("Web MIDI is not supported in this browser."); 
+    }
   }
   midiSelect.onchange = () => {
     if (activeMidiInput) activeMidiInput.onmidimessage = null;
@@ -258,9 +424,402 @@
     activeMidiInput = midiAccess.inputs.get(inputId);
     if (activeMidiInput) {
       activeMidiInput.onmidimessage = forwardMidiMessage;
-      midiStatus.textContent = `Listening to: ${activeMidiInput.name}`;
-    } else { midiStatus.textContent = "Select a MIDI device from the list above."; }
+      console.log(`Listening to: ${activeMidiInput.name}`);
+    }
   };
+
+  // --- Sequencer Functions ---
+  function generateSequencerTracks() {
+    sequencerTracksContainer.innerHTML = '';
+    
+    sequencerTrackData.forEach((track, trackIndex) => {
+      const trackElement = document.createElement('div');
+      trackElement.className = 'seq-track';
+      
+      // Track label with controls
+      const label = document.createElement('div');
+      label.className = 'seq-track-label';
+      
+      // Note parameter
+      const noteParam = document.createElement('div');
+      noteParam.className = 'seq-param';
+      const noteLabel = document.createElement('div');
+      noteLabel.className = 'seq-param-label';
+      noteLabel.textContent = 'note';
+      const noteInput = document.createElement('div');
+      noteInput.className = 'seq-number-input';
+      noteInput.textContent = track.note;
+      noteInput.title = 'MIDI Note (0-127)';
+      addDragBehavior(noteInput, track.note, 0, 127, (value) => {
+        track.note = value;
+        noteInput.textContent = value;
+      });
+      noteParam.appendChild(noteLabel);
+      noteParam.appendChild(noteInput);
+      
+      // Duration parameter
+      const durParam = document.createElement('div');
+      durParam.className = 'seq-param';
+      const durLabel = document.createElement('div');
+      durLabel.className = 'seq-param-label';
+      durLabel.textContent = 'dur';
+      const durationInput = document.createElement('div');
+      durationInput.className = 'seq-number-input';
+      durationInput.textContent = track.duration;
+      durationInput.title = 'Duration (ms)';
+      addDragBehavior(durationInput, track.duration, 50, 1000, (value) => {
+        track.duration = value;
+        durationInput.textContent = value;
+      });
+      durParam.appendChild(durLabel);
+      durParam.appendChild(durationInput);
+      
+      // Chance parameter
+      const chanceParam = document.createElement('div');
+      chanceParam.className = 'seq-param';
+      const chanceLabel = document.createElement('div');
+      chanceLabel.className = 'seq-param-label';
+      chanceLabel.textContent = '%';
+      const chanceInput = document.createElement('div');
+      chanceInput.className = 'seq-number-input';
+      chanceInput.textContent = track.chance;
+      chanceInput.title = 'Chance (%)';
+      addDragBehavior(chanceInput, track.chance, 0, 100, (value) => {
+        track.chance = value;
+        chanceInput.textContent = value;
+      });
+      chanceParam.appendChild(chanceLabel);
+      chanceParam.appendChild(chanceInput);
+      
+      // Delete button
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'seq-track-btn';
+      deleteBtn.textContent = '×';
+      deleteBtn.title = 'Delete Track';
+      deleteBtn.onclick = () => deleteTrack(trackIndex);
+      
+      label.appendChild(noteParam);
+      label.appendChild(durParam);
+      label.appendChild(chanceParam);
+      label.appendChild(deleteBtn);
+      
+      // Steps container
+      const stepsContainer = document.createElement('div');
+      stepsContainer.className = 'seq-steps';
+      
+      // Generate 16 steps for this track
+      for (let stepIndex = 0; stepIndex < 16; stepIndex++) {
+        const step = document.createElement('div');
+        step.className = `seq-step beat-${(stepIndex % 4) + 1}`;
+        step.dataset.track = trackIndex;
+        step.dataset.step = stepIndex;
+        
+        // Add step number for first beat of each bar
+        if (stepIndex % 4 === 0) {
+          step.innerHTML = `<div class="seq-step-number">${Math.floor(stepIndex / 4) + 1}</div>`;
+        }
+        
+        // Position indicator for playback
+        const indicator = document.createElement('div');
+        indicator.className = 'seq-position-indicator';
+        step.appendChild(indicator);
+        
+        step.onclick = () => toggleStep(trackIndex, stepIndex);
+        stepsContainer.appendChild(step);
+      }
+      
+      trackElement.appendChild(label);
+      trackElement.appendChild(stepsContainer);
+      sequencerTracksContainer.appendChild(trackElement);
+    });
+    
+    updateSequencerDisplay();
+  }
+  
+  function updateTrackProperty(trackIndex, property, value) {
+    if (sequencerTrackData[trackIndex]) {
+      sequencerTrackData[trackIndex][property] = value;
+    }
+  }
+  
+  function deleteTrack(trackIndex) {
+    if (sequencerTrackData.length > 1) {
+      sequencerTrackData.splice(trackIndex, 1);
+      generateSequencerTracks();
+    }
+  }
+  
+  function addTrack() {
+    sequencerTrackData.push({
+      note: 60,
+      duration: 150,
+      chance: 100,
+      pattern: Array(16).fill(0) // 0=off, 64=half, 127=full
+    });
+    generateSequencerTracks();
+  }
+
+  // Max/PD style draggable number inputs with click-to-edit
+  function addDragBehavior(element, initialValue, min, max, onUpdate) {
+    let value = initialValue;
+    let isDragging = false;
+    let startY = 0;
+    let startValue = 0;
+    let dragStarted = false;
+
+    element.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      dragStarted = false;
+      startY = e.clientY;
+      startValue = value;
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const deltaY = Math.abs(e.clientY - startY);
+      if (deltaY > 3) dragStarted = true;
+      
+      if (dragStarted) {
+        document.body.style.cursor = 'ns-resize';
+        const delta = startY - e.clientY;
+        const sensitivity = (max - min) > 100 ? 2 : 1;
+        const newValue = Math.max(min, Math.min(max, startValue + Math.round(delta * sensitivity)));
+        if (newValue !== value) {
+          value = newValue;
+          onUpdate(value);
+        }
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        if (!dragStarted) {
+          // Click-to-edit
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.value = value;
+          input.min = min;
+          input.max = max;
+          input.style.width = element.offsetWidth + 'px';
+          input.style.height = element.offsetHeight + 'px';
+          input.style.fontSize = getComputedStyle(element).fontSize;
+          input.style.textAlign = 'center';
+          input.style.border = '1px solid var(--accent-color)';
+          
+          element.style.display = 'none';
+          element.parentNode.insertBefore(input, element);
+          input.focus();
+          input.select();
+          
+          const finishEdit = () => {
+            const newValue = Math.max(min, Math.min(max, parseInt(input.value) || value));
+            value = newValue;
+            onUpdate(newValue);
+            element.style.display = 'block';
+            input.remove();
+          };
+          
+          input.addEventListener('blur', finishEdit);
+          input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') finishEdit();
+          });
+        }
+        isDragging = false;
+        dragStarted = false;
+        document.body.style.cursor = '';
+      }
+    });
+  }
+
+
+  function toggleStep(trackIndex, stepIndex) {
+    const currentVel = sequencerTrackData[trackIndex].pattern[stepIndex];
+    // Cycle through velocity levels: 0 -> 127 -> 64 -> 0
+    if (currentVel === 0) {
+      sequencerTrackData[trackIndex].pattern[stepIndex] = 127; // Full velocity
+    } else if (currentVel === 127) {
+      sequencerTrackData[trackIndex].pattern[stepIndex] = 64;  // Half velocity
+    } else {
+      sequencerTrackData[trackIndex].pattern[stepIndex] = 0;   // Off
+    }
+    updateSequencerDisplay();
+  }
+
+  function updateSequencerDisplay() {
+    const tracks = document.querySelectorAll('.seq-track');
+    tracks.forEach((trackElement, trackIndex) => {
+      const steps = trackElement.querySelectorAll('.seq-step');
+      steps.forEach((step, stepIndex) => {
+        const velocity = sequencerTrackData[trackIndex].pattern[stepIndex];
+        const isCurrentStep = stepIndex === sequencerCurrentStep && sequencerPlaying;
+        
+        // Remove all velocity classes
+        step.classList.remove('active', 'vel-half', 'vel-full');
+        
+        // Add appropriate velocity class
+        if (velocity > 0) {
+          step.classList.add('active');
+          if (velocity >= 127) {
+            step.classList.add('vel-full');
+          } else {
+            step.classList.add('vel-half');
+          }
+        }
+        
+        step.classList.toggle('current-step', isCurrentStep);
+        
+        if (isCurrentStep && velocity > 0) {
+          step.classList.add('playing');
+          setTimeout(() => step.classList.remove('playing'), 100);
+        }
+      });
+    });
+  }
+
+  function toggleSequencer() {
+    if (sequencerPlaying) {
+      stopSequencer();
+    } else {
+      startSequencer();
+    }
+  }
+
+  function startSequencer() {
+    if (sequencerPlaying) return;
+    
+    sequencerPlaying = true;
+    seqPlayButton.textContent = '⏸ Pause';
+    
+    const bpm = parseInt(seqTempoInput.value) || 120;
+    const stepInterval = (60 / bpm / 4) * 1000; // 16th notes in milliseconds
+    
+    sequencerNextStepTime = performance.now() + stepInterval;
+    sequencerTimeoutId = null; // Clear any existing timeout
+    
+    // Immediate first step
+    playCurrentStep();
+    updateSequencerDisplay();
+    
+    function scheduleNextStep() {
+      if (!sequencerPlaying) return;
+      
+      sequencerCurrentStep = (sequencerCurrentStep + 1) % 16;
+      playCurrentStep();
+      updateSequencerDisplay();
+      
+      // Get current BPM in case it changed - clamp to reasonable range
+      const currentBpm = Math.max(60, Math.min(200, parseInt(seqTempoInput.value) || 120));
+      const currentStepInterval = (60 / currentBpm / 4) * 1000;
+      
+      // Use precise timing - schedule next step based on when it should happen
+      const now = performance.now();
+      sequencerNextStepTime = now + currentStepInterval;
+      
+      // Calculate exact delay needed, accounting for any drift
+      const delay = Math.max(1, currentStepInterval);
+      sequencerTimeoutId = setTimeout(scheduleNextStep, delay);
+    }
+    
+    // Schedule the first next step
+    const delay = Math.max(1, stepInterval);
+    sequencerTimeoutId = setTimeout(scheduleNextStep, delay);
+  }
+
+  function stopSequencer() {
+    if (!sequencerPlaying) return;
+    
+    sequencerPlaying = false;
+    seqPlayButton.textContent = '▶ Play';
+    
+    // Clear any pending timeout
+    if (sequencerTimeoutId) {
+      clearTimeout(sequencerTimeoutId);
+      sequencerTimeoutId = null;
+    }
+    
+    // Clear all pending note-offs
+    noteOffTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    noteOffTimeouts.clear();
+    
+    // Stop all active notes
+    stopAllSequencerNotes();
+    updateSequencerDisplay();
+  }
+
+  function resetSequencer() {
+    const wasPlaying = sequencerPlaying;
+    stopSequencer();
+    sequencerCurrentStep = 0;
+    updateSequencerDisplay();
+    if (wasPlaying) {
+      // Restart if it was playing
+      startSequencer();
+    }
+  }
+
+  function clearAllPatterns() {
+    sequencerTrackData.forEach(track => {
+      track.pattern.fill(0); // Reset to off
+    });
+    updateSequencerDisplay();
+  }
+
+  async function playCurrentStep() {
+    if (!writer) return;
+    
+    // Play all active tracks on this step
+    sequencerTrackData.forEach((track, trackIndex) => {
+      const velocity = track.pattern[sequencerCurrentStep];
+      if (velocity > 0) {
+        // Check chance percentage
+        const shouldPlay = Math.random() * 100 < track.chance;
+        if (shouldPlay) {
+          // If this note is already playing, stop it first to prevent overlap
+          if (noteOffTimeouts.has(track.note)) {
+            clearTimeout(noteOffTimeouts.get(track.note));
+            stopSequencerNote(track.note);
+            noteOffTimeouts.delete(track.note);
+          }
+          
+          // Play the new note with the step's velocity
+          playSequencerNote(track.note, velocity);
+          
+          // Use full track duration without limiting
+          const timeoutId = setTimeout(() => {
+            stopSequencerNote(track.note);
+            noteOffTimeouts.delete(track.note); // Clean up
+          }, track.duration);
+          
+          noteOffTimeouts.set(track.note, timeoutId);
+        }
+      }
+    });
+  }
+
+  async function playSequencerNote(note, velocity) {
+    if (writer) {
+      // Always send note on, even if already active (this will retrigger)
+      await writer.write(new Uint8Array([0x90, note, velocity]));  // Same as keyboard
+      activeNotes.add(note);
+    }
+  }
+
+  async function stopSequencerNote(note) {
+    if (writer) {
+      // Always send note off to ensure it stops
+      await writer.write(new Uint8Array([0x90, note, 0]));  // Same as keyboard
+      activeNotes.delete(note);
+    }
+  }
+
+  async function stopAllSequencerNotes() {
+    if (!writer) return;
+    for (const note of activeNotes) {
+      await writer.write(new Uint8Array([0x90, note, 0]));
+    }
+    activeNotes.clear();
+  }
 
   // THIS IS THE CORRECTED KNOB CREATION FUNCTION
   function createKnob(cc, name) {
@@ -321,11 +880,46 @@
   window.onload = () => {
     const savedTheme = localStorage.getItem('theme'); if (savedTheme === 'dark') document.documentElement.classList.add('dark-mode');
     generateKeyboard();
+    
+    // Initialize MIDI on page load so devices show up
+    initMidi();
+    
     document.getElementById('theme-toggle').onclick = () => { const isDark = document.documentElement.classList.toggle('dark-mode'); localStorage.setItem('theme', isDark ? 'dark' : 'light'); };
     document.getElementById('octave-down').onclick = () => changeOctave(-1);
     document.getElementById('octave-up').onclick = () => changeOctave(1);
     syncKnobsButton.onclick = () => sendCommand('SYNC_KNOBS');
+    
+    // Sidebar toggle functionality
+    sidebarToggle.onclick = () => {
+      const isHidden = sidebar.classList.toggle('hidden');
+      appContainer.classList.toggle('sidebar-hidden', isHidden);
+      mainContent.classList.toggle('centered', isHidden);
+      sidebarToggle.textContent = isHidden ? 'Serial Log' : 'Hide Log';
+    };
+    
+    // Raw log toggle functionality
+    rawLogToggle.checked = rawLogMode;
+    rawLogToggle.onchange = () => {
+      rawLogMode = rawLogToggle.checked;
+      log.textContent = ''; // Clear log when switching modes
+    };
+    
+    // Generate tracks on startup
+    generateSequencerTracks();
+    
+    // Sequencer event handlers
+    seqPlayButton.onclick = toggleSequencer;
+    seqResetButton.onclick = resetSequencer;
+    seqClearButton.onclick = clearAllPatterns;
+    seqAddTrackButton.onclick = addTrack;
+    
+    
+    // Tempo updates automatically during playback - no restart needed
+    
     allNotesOffButton.onclick = async () => {
+      // Stop sequencer and clear any active notes
+      stopSequencer();
+      
       if (writer) {
         // Send All Notes Off MIDI CC (CC 123 with value 0)
         await writer.write(new Uint8Array([0xB0, 123, 0]));
