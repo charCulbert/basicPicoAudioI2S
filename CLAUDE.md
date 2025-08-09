@@ -58,11 +58,28 @@ The project uses 16.15 signed fixed-point format (`fix15`) for audio processing:
 - Audio thread optimized for RP2040 (no FPU) with minimal float operations
 
 ### Audio Modules
-- `SimpleFixedOscModule` - Complete monophonic synthesizer voice with sine oscillator
+- `SimpleFixedOscModule` - Complete polyphonic synthesizer (8 voices) with multiple oscillator types
 - `Fix15VCAEnvelopeModule` - High-performance ADSR envelope with classic analog behavior  
 - `FilterModule` - Moog-style 4-pole ladder filter with resonance
 - Modules implement `AudioModule::process(choc::buffer::InterleavedView<fix15>&)`
-- Support for FM synthesis, envelopes, filtering, and reverb
+- Support for additive synthesis, envelopes, filtering, and polyphony
+
+### Oscillator System
+The `SimpleFixedOscModule` features a complete oscillator bank per voice:
+- **Saw Wave** - Linear sawtooth with anti-aliasing considerations
+- **Pulse Wave** - Variable width pulse (5-95% duty cycle) with SH-101 style control
+- **Sub Oscillator** - Perfect octave-down square wave phase-locked to pulse
+- **Noise Generator** - White noise using linear congruential generator
+- **Phase Synchronization** - All oscillators reset to phase 0 on noteOn for consistent mixing
+- **Additive Mixing** - SH-101 style independent level controls with /4 scaling to prevent clipping
+- **Phase Inversion** - Pulse and sub use inverted polarity to avoid destructive interference with saw
+
+### Oscillator Implementation Details
+- All oscillators use `fix15` 16.15 fixed-point arithmetic for sample generation
+- Phase accumulators advance by frequency-dependent increments each sample
+- Sub oscillator uses frequency multiplier (0.5f) for exact 2:1 frequency ratio with pulse
+- Pulse width parameter affects pulse oscillator in real-time (5ms smoothing)
+- Phase reset on noteOn ensures predictable oscillator relationships and eliminates clicks
 
 ### Filter System
 The Moog ladder filter (`FilterModule`) features:
@@ -130,6 +147,14 @@ The ADSR envelope (`Fix15VCAEnvelopeModule`) features:
 - Call `noteOn()` and `noteOff()` for gate control
 - Use `getNextValue()` for envelope level or `process()` for VCA mode
 - Parameters can be changed during playback for performance expression
+
+**Oscillator Integration:**
+- Four oscillators per voice: saw, pulse, sub (octave-down square), and noise
+- Independent level controls: `sawLevel`, `pulseLevel`, `subLevel`, `noiseLevel` (0-1 range)
+- Pulse width control: `pulseWidth` parameter (0.05-0.95 range for 5-95% duty cycle)
+- Phase synchronization: All oscillators reset to 0 on noteOn for consistent sound
+- Additive mixing: Total signal = (saw + pulse + sub + noise) / 4 to prevent overflow
+- Sub oscillator uses frequency multiplier (0.5f) for perfect octave-down sync with pulse
 
 **Filter Integration:**
 - Use `FilterModule` for Moog-style filtering

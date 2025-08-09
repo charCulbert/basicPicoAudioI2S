@@ -52,7 +52,7 @@ private:
 class SimpleFixedOscModule : public AudioModule {
 private:
     // Number of polyphonic voices
-    static constexpr int NUM_VOICES = 8;
+    static constexpr int NUM_VOICES = 4;
     
     struct Voice {
         // DSP objects per voice
@@ -101,8 +101,8 @@ private:
         
         void noteOff() {
             if (!isActive) return;
-            isActive = false;
-            envelope.noteOff();
+            isActive = false;  // Key is no longer pressed
+            envelope.noteOff(); // Start release phase
         }
         
         static float midiNoteToFreq(uint8_t note) {
@@ -337,7 +337,15 @@ private:
     }
     
     void handleNoteOn(uint8_t note, fix15 velocity) {
-        // 1. Find the first completely idle voice
+        // 1. FIRST: Check if this note is already playing OR still sounding - steal it immediately
+        for (auto& voice : voices) {
+            if (voice.midiNote == note && (voice.isActive || voice.envelope.isActive())) {
+                voice.noteOn(note, velocity, sampleRate); // Retrigger the same note
+                return; // Don't allow duplicate notes, even if in release phase
+            }
+        }
+        
+        // 2. Find the first completely idle voice
         for (auto& voice : voices) {
             if (!voice.envelope.isActive()) {
                 voice.noteOn(note, velocity, sampleRate);
@@ -345,17 +353,28 @@ private:
             }
         }
         
-        // 2. If no idle voices, look for voices in release phase (prefer stealing these)
+        // 3. If no idle voices, look for voices in release phase (prefer stealing these)
         for (auto& voice : voices) {
             if (voice.envelope.getState() == Fix15VCAEnvelopeModule::State::Release) {
-                voice.noteOn(note, velocity, sampleRate); // This will do a clean restart, not StealFade
+                voice.noteOn(note, velocity, sampleRate);
                 return; // Found a releasing voice to reuse
             }
         }
         
-        // 3. If all voices are actively playing (Attack/Decay/Sustain), steal one using round-robin
-        voices[next_voice_to_steal].noteOn(note, velocity, sampleRate);
-        next_voice_to_steal = (next_voice_to_steal + 1) % NUM_VOICES;
+        // 4. ONLY IF MORE THAN 4 NOTES: steal the oldest voice (FIFO)
+        // This should rarely happen with 4 voices - only when playing more than 4 simultaneous notes
+        size_t oldest_voice = 0;
+        for (size_t i = 1; i < voices.size(); ++i) {
+            // Find voice that's been playing longest (simple heuristic: lowest envelope level in sustain)
+            if (voices[i].envelope.getState() == Fix15VCAEnvelopeModule::State::Sustain &&
+                voices[oldest_voice].envelope.getState() == Fix15VCAEnvelopeModule::State::Sustain) {
+                // Both in sustain, steal the one with lower envelope level (been playing longer)
+                if (voices[i].envelope.getNextValue() < voices[oldest_voice].envelope.getNextValue()) {
+                    oldest_voice = i;
+                }
+            }
+        }
+        voices[oldest_voice].noteOn(note, velocity, sampleRate);
     }
     
     void handleNoteOff(uint8_t note) {
