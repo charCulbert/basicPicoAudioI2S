@@ -19,6 +19,9 @@ struct Phase
     /// Returns the current phase before incrementing it
     fix15 next(fix15 wrapLimit) noexcept;
     
+    /// Get current phase without advancing (for sub-oscillator sync)
+    fix15 getCurrentPhase() const noexcept { return phase; }
+    
     fix15 phase = FIX15_ZERO;
     fix15 increment = FIX15_ZERO;
 };
@@ -72,6 +75,7 @@ struct Square
     
     void resetPhase() noexcept                                    { phase.resetPhase(); }
     void setFrequency(float frequency, float sampleRate)         { phase.setFrequency(frequency, sampleRate, FIX15_ONE); }
+    void setFrequency(float frequency, float sampleRate, float multiplier) { phase.setFrequency(frequency * multiplier, sampleRate, FIX15_ONE); }
     
     /// Returns the next sample
     SampleType getSample() noexcept;
@@ -93,6 +97,9 @@ struct Pulse
     
     /// Returns the next pulse sample
     SampleType getSample() noexcept;
+    
+    /// Returns sub-octave (half frequency) square wave locked to pulse phase
+    SampleType getSubSample() noexcept;
     
 private:
     Phase phase;
@@ -200,8 +207,8 @@ inline fix15 Saw::getSample() noexcept
 inline fix15 Square::getSample() noexcept
 {
     fix15 p = phase.next(FIX15_ONE);
-    // Return -1 for first half, +1 for second half
-    return (p < FIX15_HALF) ? -FIX15_ONE : FIX15_ONE;
+    // Return +1 for first half, -1 for second half (matches inverted pulse polarity)
+    return (p < FIX15_HALF) ? FIX15_ONE : -FIX15_ONE;
 }
 
 //==============================================================================
@@ -209,8 +216,18 @@ inline fix15 Square::getSample() noexcept
 inline fix15 Pulse::getSample() noexcept
 {
     fix15 p = phase.next(FIX15_ONE);
-    // Return +1 when phase < pulseWidth, -1 otherwise
-    return (p < pulseWidth) ? FIX15_ONE : -FIX15_ONE;
+    // Return -1 when phase < pulseWidth, +1 otherwise (inverted phase to avoid cancellation with saw)
+    return (p < pulseWidth) ? -FIX15_ONE : FIX15_ONE;
+}
+
+inline fix15 Pulse::getSubSample() noexcept
+{
+    // Create perfect sub-octave from current pulse phase (no phase advancement needed)
+    // Use upper bit of phase for octave-down square wave
+    fix15 current_phase = phase.getCurrentPhase();
+    // Check bit 14 (second-highest bit) for octave-down square wave
+    // This creates a square wave that changes every 2 pulse cycles
+    return (current_phase & 0x4000) ? -FIX15_ONE : FIX15_ONE;  // Bit 14 = octave down
 }
 
 //==============================================================================

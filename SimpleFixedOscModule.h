@@ -11,6 +11,44 @@
 #include "Fix15VCAEnvelopeModule.h"
 #include <vector>
 
+// Simple single-voice Moog ladder filter for per-voice filtering
+class VoiceFilter {
+public:
+    VoiceFilter() {
+        stage1 = stage2 = stage3 = stage4 = 0;
+    }
+    
+    fix15 process(fix15 input, fix15 cutoff, fix15 resonance) {
+        // Map cutoff: 0-1 -> 0.001-0.85 
+        fix15 g = multfix15(cutoff, 27787) + 33;  // 0.849 * 32768, 0.001 * 32768
+        // Map resonance: 0-1 -> 0-4.5
+        fix15 res = multfix15(resonance, 147456);  // 4.5 * 32768
+        
+        // Moog ladder with resonance feedback
+        fix15 fb_input = input - multfix15(res, stage4);
+        
+        // Clamp feedback input to prevent instability
+        if (fb_input > FIX15_ONE) fb_input = FIX15_ONE;
+        else if (fb_input < -FIX15_ONE) fb_input = -FIX15_ONE;
+        
+        // 4-stage ladder filter
+        stage1 = stage1 + multfix15(g, fb_input - stage1);
+        stage2 = stage2 + multfix15(g, stage1 - stage2);
+        stage3 = stage3 + multfix15(g, stage2 - stage3);
+        stage4 = stage4 + multfix15(g, stage3 - stage4);
+        
+        // Makeup gain (2.5x) to compensate for filter loss
+        fix15 output = stage4 + (stage4 >> 1);  // * 1.5, then we'll add more
+        output = output + (output >> 2);        // * 1.25 more = 1.5 * 1.25 = 1.875
+        output = output + (output >> 3);        // * 1.125 more = 1.875 * 1.125 ≈ 2.1
+        
+        return output;
+    }
+    
+private:
+    fix15 stage1, stage2, stage3, stage4;
+};
+
 class SimpleFixedOscModule : public AudioModule {
 private:
     // Number of polyphonic voices
@@ -23,6 +61,7 @@ private:
         fixOscs::oscillator::Square subOsc;  // Sub oscillator (1 octave down square wave)
         fixOscs::oscillator::Noise noiseOsc;
         Fix15VCAEnvelopeModule envelope;
+        VoiceFilter filter;  // Per-voice filter for envelope modulation
         
         // Voice state
         uint8_t midiNote = 0;
@@ -44,9 +83,17 @@ private:
             
             // OPTIMIZED: Set frequency immediately - envelope StealFade handles smooth stealing
             float freq = midiNoteToFreq(note);
+            
+            // Reset phases for consistent oscillator synchronization
+            sawOsc.resetPhase();
+            pulseOsc.resetPhase();
+            subOsc.resetPhase();
+            noiseOsc.resetPhase();
+            
+            // Set frequencies after phase reset
             sawOsc.setFrequency(freq, sample_rate);
             pulseOsc.setFrequency(freq, sample_rate);
-            subOsc.setFrequency(freq * 0.5f, sample_rate);  // Sub is 1 octave down (half frequency)
+            subOsc.setFrequency(freq, sample_rate, 0.5f);  // Sub is exactly half frequency (octave down)
             // Noise doesn't need frequency setting
             s_velocity.setTargetValue(vel);
             envelope.noteOn(); // This handles StealFade for smooth voice stealing
@@ -97,6 +144,10 @@ private:
     Parameter* p_subLevel = nullptr;
     Parameter* p_noiseLevel = nullptr;
     Parameter* p_pulseWidth = nullptr;
+    Parameter* p_filterCutoff = nullptr;
+    Parameter* p_filterResonance = nullptr;
+    Parameter* p_filterEnvAmount = nullptr;
+    Parameter* p_filterKeyboardTracking = nullptr;
     
     
     // === Audio Thread Smoothers ===
@@ -129,6 +180,10 @@ public:
             if (p->getID() == "subLevel") p_subLevel = p;
             if (p->getID() == "noiseLevel") p_noiseLevel = p;
             if (p->getID() == "pulseWidth") p_pulseWidth = p;
+            if (p->getID() == "filterCutoff") p_filterCutoff = p;
+            if (p->getID() == "filterResonance") p_filterResonance = p;
+            if (p->getID() == "filterEnvAmount") p_filterEnvAmount = p;
+            if (p->getID() == "filterKeyboardTracking") p_filterKeyboardTracking = p;
         }
         
         // Set ramp times for smoothers
@@ -195,7 +250,7 @@ private:
         // Get oscillator samples
         fix15 saw_sample = voice.sawOsc.getSample();
         fix15 pulse_sample = voice.pulseOsc.getSample();
-        fix15 sub_sample = voice.subOsc.getSample();
+        fix15 sub_sample = voice.subOsc.getSample();  // Back to separate sub oscillator
         fix15 noise_sample = voice.noiseOsc.getSample();
         
         // Get mix levels (SH-101 style - each oscillator has independent level)
@@ -210,13 +265,34 @@ private:
                                 multfix15(sub_sample, subLevel) +
                                 multfix15(noise_sample, noiseLevel);
         
-        // Clamp to prevent overflow (simple saturation)
-        fix15 mixed_sample = (mixed_sample32 > FIX15_ONE) ? FIX15_ONE : 
-                            (mixed_sample32 < -FIX15_ONE) ? -FIX15_ONE : 
-                            (fix15)mixed_sample32;
+        // Pure additive oscillator mixing with safe casting
+        // Scale down just enough to prevent int16_t overflow, but preserve mixing behavior
+        mixed_sample32 = mixed_sample32 >> 2;  // Divide by 4 to allow up to 4 oscillators at full level
+        fix15 mixed_sample = (fix15)mixed_sample32;
         
-        // Apply envelope to mixed sample
-        fix15 enveloped_sample = multfix15(mixed_sample, env_level);
+        // Apply per-voice filter with envelope and keyboard tracking modulation
+        fix15 base_cutoff = p_filterCutoff ? float2fix15(p_filterCutoff->getValue()) : float2fix15(0.5f);
+        fix15 env_amount = p_filterEnvAmount ? float2fix15(p_filterEnvAmount->getValue()) : FIX15_ZERO;
+        fix15 kbd_amount = p_filterKeyboardTracking ? float2fix15(p_filterKeyboardTracking->getValue()) : FIX15_ZERO;
+        fix15 resonance = p_filterResonance ? float2fix15(p_filterResonance->getValue()) : float2fix15(0.2f);
+        
+        // Calculate keyboard tracking offset (relative to C4 = MIDI note 60)
+        // Each octave up/down adds/subtracts a smaller amount for musical tracking
+        int note_offset = (int)voice.midiNote - 60;  // Distance from C4
+        fix15 kbd_offset = multfix15(float2fix15((note_offset / 12.0f) * 0.3f), kbd_amount);  // Convert to octaves, scale down by 30%
+        
+        // Modulate filter cutoff: base + envelope + keyboard tracking
+        fix15 modulated_cutoff = base_cutoff + multfix15(env_level, env_amount) + kbd_offset;
+        
+        // Clamp cutoff to valid range (0-1)
+        if (modulated_cutoff > FIX15_ONE) modulated_cutoff = FIX15_ONE;
+        else if (modulated_cutoff < FIX15_ZERO) modulated_cutoff = FIX15_ZERO;
+        
+        // Apply per-voice filter
+        fix15 filtered_sample = voice.filter.process(mixed_sample, modulated_cutoff, resonance);
+        
+        // Apply envelope to filtered sample
+        fix15 enveloped_sample = multfix15(filtered_sample, env_level);
         
         // Apply velocity
         return multfix15(enveloped_sample, current_velocity);

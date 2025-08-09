@@ -78,6 +78,10 @@ inline void initialize_parameters() {
       new Parameter("filterCutoff", "Cutoff", 0.0f, 1.0f, 0.5f, 76));
   g_synth_parameters.push_back(
       new Parameter("filterResonance", "Resonance", 0.0f, 1.0f, 0.2f, 77));
+  g_synth_parameters.push_back(
+      new Parameter("filterEnvAmount", "Filter Env Amount", -1.0f, 1.0f, 0.0f, 83)); // Filter envelope modulation depth
+  g_synth_parameters.push_back(
+      new Parameter("filterKeyboardTracking", "Filter KBD", 0.0f, 1.0f, 0.3f, 84)); // Filter keyboard tracking amount
 
   // === Master Controls ===
   g_synth_parameters.push_back(new Parameter("masterVol", "Master Volume", 0.0f,

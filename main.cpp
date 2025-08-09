@@ -6,7 +6,6 @@
 #include "AudioEngine.h"
 #include "I2sAudioOutput.h"
 #include "ParameterStore.h"
-#include "FilterModule.h"
 #include "GainModule.h"
 #include "MidiSerialListener.h"
 #include "SimpleFixedOscModule.h"
@@ -28,12 +27,10 @@ void main_core1() {
 
   // 2. Create audio modules in processing order
   static SimpleFixedOscModule synth_voice((float)ActiveAudioOutput::SAMPLE_RATE);
-  static FilterModule filter((float)ActiveAudioOutput::SAMPLE_RATE);
   static GainModule master_gain((float)ActiveAudioOutput::SAMPLE_RATE);
 
-  // 3. Add modules to engine in processing order (last module = master gain)
+  // 3. Add modules to engine in processing order (filter now per-voice)
   engine.addModule(&synth_voice);
-  engine.addModule(&filter);
   engine.addModule(&master_gain);
 
   // 4. Instantiate the audio hardware driver and give it the engine
