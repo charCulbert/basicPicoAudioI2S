@@ -47,7 +47,7 @@ void main_core1() {
 // Core 0: The Control Thread
 //==============================================================================
 int main() {
-  // --- Overclocking Section ---
+  // --- Overclocking Section (BEFORE USB init) ---
   // Set the core voltage. VREG_VOLTAGE_1_15 is a safe level for a 250MHz
   // overclock.
   vreg_set_voltage(VREG_VOLTAGE_1_15);
@@ -58,11 +58,12 @@ int main() {
   // ----------------------------
 
   stdio_init_all();
+  sleep_ms(3000);
+
 
   // IMPORTANT: Initialize the global parameter store BEFORE launching Core 1
   initialize_parameters();
 
-  sleep_ms(2000);
 
   printf("LOG:--- Pico Synth (Integrated Voice) Initialized ---\n");
   printf("LOG: System clock is running at %lu kHz\n",

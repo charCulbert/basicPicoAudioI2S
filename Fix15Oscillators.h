@@ -80,6 +80,44 @@ struct Square
 };
 
 //==============================================================================
+/// Variable pulse width oscillator (like SH-101)
+struct Pulse
+{
+    using SampleType = fix15;
+    
+    Pulse() : pulseWidth(FIX15_HALF) {}  // Initialize to 50% duty cycle
+    
+    void resetPhase() noexcept                                    { phase.resetPhase(); }
+    void setFrequency(float frequency, float sampleRate)         { phase.setFrequency(frequency, sampleRate, FIX15_ONE); }
+    void setPulseWidth(fix15 width) noexcept                     { pulseWidth = width; }  // 0-1 range
+    
+    /// Returns the next pulse sample
+    SampleType getSample() noexcept;
+    
+private:
+    Phase phase;
+    fix15 pulseWidth;  // Duty cycle in fix15 format (0 to 1)
+};
+
+//==============================================================================
+/// White noise generator using linear congruential generator (LCG)
+struct Noise
+{
+    using SampleType = fix15;
+    
+    Noise() : seed(1) {}  // Initialize with non-zero seed
+    
+    void resetPhase() noexcept                                    { seed = 1; }  // Reset noise sequence
+    void setFrequency(float, float) noexcept                     { /* Noise doesn't use frequency */ }
+    
+    /// Returns the next noise sample
+    SampleType getSample() noexcept;
+    
+private:
+    uint32_t seed;
+};
+
+//==============================================================================
 //        _        _           _  _
 //     __| |  ___ | |_   __ _ (_)| | ___
 //    / _` | / _ \| __| / _` || || |/ __|
@@ -164,6 +202,31 @@ inline fix15 Square::getSample() noexcept
     fix15 p = phase.next(FIX15_ONE);
     // Return -1 for first half, +1 for second half
     return (p < FIX15_HALF) ? -FIX15_ONE : FIX15_ONE;
+}
+
+//==============================================================================
+
+inline fix15 Pulse::getSample() noexcept
+{
+    fix15 p = phase.next(FIX15_ONE);
+    // Return +1 when phase < pulseWidth, -1 otherwise
+    return (p < pulseWidth) ? FIX15_ONE : -FIX15_ONE;
+}
+
+//==============================================================================
+
+inline fix15 Noise::getSample() noexcept
+{
+    // Linear Congruential Generator: next = (a * seed + c) mod m
+    // Using values from Numerical Recipes: a=1664525, c=1013904223, m=2^32
+    seed = seed * 1664525U + 1013904223U;
+    
+    // Convert upper 16 bits to fix15 range (-1 to +1)
+    // Take top 16 bits, convert to signed, then to fix15
+    int16_t noise_sample = (int16_t)(seed >> 16);
+    
+    // Convert from int16 range (-32768 to +32767) to fix15 range (-1 to +1)
+    return (fix15)(noise_sample);  // Already in the right range for fix15
 }
 
 } // namespace fixOscs::oscillator

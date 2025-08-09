@@ -59,6 +59,20 @@ inline void initialize_parameters() {
   g_synth_parameters.push_back(new Parameter(
       "release", "Release", 0.01f, 5.0f, 0.1f, 72)); // Release time (seconds)
 
+  // === Oscillator Mix Parameters ===
+  g_synth_parameters.push_back(
+      new Parameter("sawLevel", "Saw Level", 0.0f, 1.0f, 1.0f, 79)); // Saw oscillator mix level
+  g_synth_parameters.push_back(
+      new Parameter("pulseLevel", "Pulse Level", 0.0f, 1.0f, 0.0f, 80)); // Pulse oscillator mix level
+  g_synth_parameters.push_back(
+      new Parameter("subLevel", "Sub Level", 0.0f, 1.0f, 0.0f, 82)); // Sub oscillator mix level
+  g_synth_parameters.push_back(
+      new Parameter("noiseLevel", "Noise Level", 0.0f, 1.0f, 0.0f, 78)); // Noise oscillator mix level
+  
+  // === Oscillator Shape Parameters ===
+  g_synth_parameters.push_back(
+      new Parameter("pulseWidth", "Pulse Width", 0.05f, 0.95f, 0.5f, 81)); // Pulse width (duty cycle)
+
   // === Filter Parameters ===
   g_synth_parameters.push_back(
       new Parameter("filterCutoff", "Cutoff", 0.0f, 1.0f, 0.5f, 76));

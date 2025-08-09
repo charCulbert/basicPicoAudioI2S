@@ -51,7 +51,6 @@ public:
      */
     void processNextBlock(choc::buffer::InterleavedView<fix15>& bufferToFill) {
 
-
         // 1. Clear the buffer to ensure a clean slate for mixing.
         bufferToFill.clear();
 

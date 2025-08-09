@@ -18,7 +18,10 @@ private:
     
     struct Voice {
         // DSP objects per voice
-        fixOscs::oscillator::Saw oscillator;
+        fixOscs::oscillator::Saw sawOsc;
+        fixOscs::oscillator::Pulse pulseOsc;
+        fixOscs::oscillator::Square subOsc;  // Sub oscillator (1 octave down square wave)
+        fixOscs::oscillator::Noise noiseOsc;
         Fix15VCAEnvelopeModule envelope;
         
         // Voice state
@@ -41,7 +44,10 @@ private:
             
             // OPTIMIZED: Set frequency immediately - envelope StealFade handles smooth stealing
             float freq = midiNoteToFreq(note);
-            oscillator.setFrequency(freq, sample_rate);
+            sawOsc.setFrequency(freq, sample_rate);
+            pulseOsc.setFrequency(freq, sample_rate);
+            subOsc.setFrequency(freq * 0.5f, sample_rate);  // Sub is 1 octave down (half frequency)
+            // Noise doesn't need frequency setting
             s_velocity.setTargetValue(vel);
             envelope.noteOn(); // This handles StealFade for smooth voice stealing
         }
@@ -86,6 +92,11 @@ private:
     Parameter* p_decay = nullptr;
     Parameter* p_sustain = nullptr;
     Parameter* p_release = nullptr;
+    Parameter* p_sawLevel = nullptr;
+    Parameter* p_pulseLevel = nullptr;
+    Parameter* p_subLevel = nullptr;
+    Parameter* p_noiseLevel = nullptr;
+    Parameter* p_pulseWidth = nullptr;
     
     
     // === Audio Thread Smoothers ===
@@ -113,6 +124,11 @@ public:
             if (p->getID() == "decay") p_decay = p;
             if (p->getID() == "sustain") p_sustain = p;
             if (p->getID() == "release") p_release = p;
+            if (p->getID() == "sawLevel") p_sawLevel = p;
+            if (p->getID() == "pulseLevel") p_pulseLevel = p;
+            if (p->getID() == "subLevel") p_subLevel = p;
+            if (p->getID() == "noiseLevel") p_noiseLevel = p;
+            if (p->getID() == "pulseWidth") p_pulseWidth = p;
         }
         
         // Set ramp times for smoothers
@@ -152,7 +168,7 @@ public:
                 }
             }
             
-            // Scale down by voice count - use bit shift for performance
+            // Scale down by voice count for suitable codec/headphone level - use bit shift for performance
             fix15 finalSample = (fix15)(mixedSample32 >> 3); // Divide by 8 using bit shift
 
         // Output to all channels
@@ -170,11 +186,37 @@ private:
         // Get envelope value (this handles StealFade for smooth voice stealing)
         fix15 env_level = voice.envelope.getNextValue();
         
-        // Get the next sample from the oscillator
-        fix15 sine_sample = voice.oscillator.getSample();
+        // Update pulse width for this voice
+        if (p_pulseWidth) {
+            fix15 pulseWidth = float2fix15(p_pulseWidth->getValue());
+            voice.pulseOsc.setPulseWidth(pulseWidth);
+        }
         
-        // Apply envelope to sample
-        fix15 enveloped_sample = multfix15(sine_sample, env_level);
+        // Get oscillator samples
+        fix15 saw_sample = voice.sawOsc.getSample();
+        fix15 pulse_sample = voice.pulseOsc.getSample();
+        fix15 sub_sample = voice.subOsc.getSample();
+        fix15 noise_sample = voice.noiseOsc.getSample();
+        
+        // Get mix levels (SH-101 style - each oscillator has independent level)
+        fix15 sawLevel = p_sawLevel ? float2fix15(p_sawLevel->getValue()) : FIX15_ONE;
+        fix15 pulseLevel = p_pulseLevel ? float2fix15(p_pulseLevel->getValue()) : FIX15_ZERO;
+        fix15 subLevel = p_subLevel ? float2fix15(p_subLevel->getValue()) : FIX15_ZERO;
+        fix15 noiseLevel = p_noiseLevel ? float2fix15(p_noiseLevel->getValue()) : FIX15_ZERO;
+        
+        // Mix oscillators additively (like SH-101)
+        int32_t mixed_sample32 = multfix15(saw_sample, sawLevel) + 
+                                multfix15(pulse_sample, pulseLevel) + 
+                                multfix15(sub_sample, subLevel) +
+                                multfix15(noise_sample, noiseLevel);
+        
+        // Clamp to prevent overflow (simple saturation)
+        fix15 mixed_sample = (mixed_sample32 > FIX15_ONE) ? FIX15_ONE : 
+                            (mixed_sample32 < -FIX15_ONE) ? -FIX15_ONE : 
+                            (fix15)mixed_sample32;
+        
+        // Apply envelope to mixed sample
+        fix15 enveloped_sample = multfix15(mixed_sample, env_level);
         
         // Apply velocity
         return multfix15(enveloped_sample, current_velocity);
