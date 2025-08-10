@@ -58,8 +58,9 @@ private:
         // DSP objects per voice
         fixOscs::oscillator::Saw sawOsc;
         fixOscs::oscillator::Pulse pulseOsc;
-        fixOscs::oscillator::Square subOsc;  // Sub oscillator (1 octave down square wave)
+        fixOscs::oscillator::Pulse subOsc;  // Sub oscillator (1 octave down square wave)
         fixOscs::oscillator::Noise noiseOsc;
+
         Fix15VCAEnvelopeModule envelope;
         VoiceFilter filter;  // Per-voice filter for envelope modulation
         
@@ -82,18 +83,17 @@ private:
             velocity = vel;
             
             // OPTIMIZED: Set frequency immediately - envelope StealFade handles smooth stealing
-            float freq = midiNoteToFreq(note);
+            fix15 freq = midiNoteToFreq(note);
             
             // Reset phases for consistent oscillator synchronization
             sawOsc.resetPhase();
             pulseOsc.resetPhase();
             subOsc.resetPhase();
-            noiseOsc.resetPhase();
-            
+
             // Set frequencies after phase reset
-            sawOsc.setFrequency(freq, sample_rate);
-            pulseOsc.setFrequency(freq, sample_rate);
-            subOsc.setFrequency(freq, sample_rate, 0.5f);  // Sub is exactly half frequency (octave down)
+            sawOsc.setFrequency(freq);
+            pulseOsc.setFrequency(freq);
+            subOsc.setFrequency(freq >> 1); // Bit shift = exact divide by 2
             // Noise doesn't need frequency setting
             s_velocity.setTargetValue(vel);
             envelope.noteOn(); // This handles StealFade for smooth voice stealing
@@ -105,26 +105,39 @@ private:
             envelope.noteOff(); // Start release phase
         }
         
-        static float midiNoteToFreq(uint8_t note) {
-            // OPTIMIZED: Use lookup table instead of expensive powf() calculation
-            static const float midi_freq_table[128] = {
-                8.176f, 8.662f, 9.177f, 9.723f, 10.301f, 10.913f, 11.562f, 12.250f, 12.978f, 13.750f, 14.568f, 15.434f, // C-1 to B-1
-                16.352f, 17.324f, 18.354f, 19.445f, 20.602f, 21.827f, 23.125f, 24.500f, 25.957f, 27.500f, 29.135f, 30.868f, // C0 to B0
-                32.703f, 34.648f, 36.708f, 38.891f, 41.203f, 43.654f, 46.249f, 48.999f, 51.913f, 55.000f, 58.270f, 61.735f, // C1 to B1
-                65.406f, 69.296f, 73.416f, 77.782f, 82.407f, 87.307f, 92.499f, 97.999f, 103.826f, 110.000f, 116.541f, 123.471f, // C2 to B2
-                130.813f, 138.591f, 146.832f, 155.563f, 164.814f, 174.614f, 184.997f, 195.998f, 207.652f, 220.000f, 233.082f, 246.942f, // C3 to B3
-                261.626f, 277.183f, 293.665f, 311.127f, 329.628f, 349.228f, 369.994f, 391.995f, 415.305f, 440.000f, 466.164f, 493.883f, // C4 to B4
-                523.251f, 554.365f, 587.330f, 622.254f, 659.255f, 698.456f, 739.989f, 783.991f, 830.609f, 880.000f, 932.328f, 987.767f, // C5 to B5
-                1046.502f, 1108.731f, 1174.659f, 1244.508f, 1318.510f, 1396.913f, 1479.978f, 1567.982f, 1661.219f, 1760.000f, 1864.655f, 1975.533f, // C6 to B6
-                2093.005f, 2217.461f, 2349.318f, 2489.016f, 2637.020f, 2793.826f, 2959.955f, 3135.963f, 3322.438f, 3520.000f, 3729.310f, 3951.066f, // C7 to B7
-                4186.009f, 4434.922f, 4698.636f, 4978.032f, 5274.041f, 5587.652f, 5919.911f, 6271.927f, 6644.875f, 7040.000f, 7458.620f, 7902.133f, // C8 to B8
-                8372.018f, 8869.844f, 9397.273f, 9956.063f, 10548.082f, 11175.303f, 11839.822f, 12543.854f // C9 to G9
-            };
+        static fix15 midiNoteToFreq(uint8_t note) {
+            // OPTIMIZED: Use fix15 lookup table generated at initialization
+            static fix15 midi_freq_table_fix15[128];
+            static bool table_initialized = false;
+            
+            // Initialize table once using float calculations then convert to fix15
+            if (!table_initialized) {
+                const float midi_freq_table_float[128] = {
+                    8.176f, 8.662f, 9.177f, 9.723f, 10.301f, 10.913f, 11.562f, 12.250f, 12.978f, 13.750f, 14.568f, 15.434f, // C-1 to B-1
+                    16.352f, 17.324f, 18.354f, 19.445f, 20.602f, 21.827f, 23.125f, 24.500f, 25.957f, 27.500f, 29.135f, 30.868f, // C0 to B0
+                    32.703f, 34.648f, 36.708f, 38.891f, 41.203f, 43.654f, 46.249f, 48.999f, 51.913f, 55.000f, 58.270f, 61.735f, // C1 to B1
+                    65.406f, 69.296f, 73.416f, 77.782f, 82.407f, 87.307f, 92.499f, 97.999f, 103.826f, 110.000f, 116.541f, 123.471f, // C2 to B2
+                    130.813f, 138.591f, 146.832f, 155.563f, 164.814f, 174.614f, 184.997f, 195.998f, 207.652f, 220.000f, 233.082f, 246.942f, // C3 to B3
+                    261.626f, 277.183f, 293.665f, 311.127f, 329.628f, 349.228f, 369.994f, 391.995f, 415.305f, 440.000f, 466.164f, 493.883f, // C4 to B4
+                    523.251f, 554.365f, 587.330f, 622.254f, 659.255f, 698.456f, 739.989f, 783.991f, 830.609f, 880.000f, 932.328f, 987.767f, // C5 to B5
+                    1046.502f, 1108.731f, 1174.659f, 1244.508f, 1318.510f, 1396.913f, 1479.978f, 1567.982f, 1661.219f, 1760.000f, 1864.655f, 1975.533f, // C6 to B6
+                    2093.005f, 2217.461f, 2349.318f, 2489.016f, 2637.020f, 2793.826f, 2959.955f, 3135.963f, 3322.438f, 3520.000f, 3729.310f, 3951.066f, // C7 to B7
+                    4186.009f, 4434.922f, 4698.636f, 4978.032f, 5274.041f, 5587.652f, 5919.911f, 6271.927f, 6644.875f, 7040.000f, 7458.620f, 7902.133f, // C8 to B8
+                    8372.018f, 8869.844f, 9397.273f, 9956.063f, 10548.082f, 11175.303f, 11839.822f, 12543.854f // C9 to G9
+                };
+                
+                // Convert float table to fix15 at initialization
+                for (int i = 0; i < 128; ++i) {
+                    midi_freq_table_fix15[i] = float2fix15(midi_freq_table_float[i]);
+                }
+                table_initialized = true;
+            }
             
             if (note >= 128) note = 127; // Clamp to valid range
-            return midi_freq_table[note];
+            return midi_freq_table_fix15[note];
         }
     };
+
     
     // Voice management
     std::vector<Voice> voices;
@@ -161,14 +174,21 @@ private:
 
 
 public:
-    SimpleFixedOscModule(float sample_rate)
+    explicit SimpleFixedOscModule(float sample_rate)
     : sampleRate(sample_rate) {
         // Initialize voices
         voices.reserve(NUM_VOICES);
         for (int i = 0; i < NUM_VOICES; ++i) {
             voices.emplace_back(sample_rate);
         }
-        
+
+        for (auto& voice : voices) {
+            voice.sawOsc.setSampleRate(sample_rate);
+            voice.pulseOsc.setSampleRate(sample_rate);
+            voice.subOsc.setSampleRate(sample_rate);
+            // Noise doesn't need sample rate
+        }
+
         // Find our parameters by their string ID from the global store
         for (auto* p : g_synth_parameters) {
             if (p->getID() == "attack") p_attack = p;
@@ -260,10 +280,7 @@ private:
         fix15 noiseLevel = p_noiseLevel ? float2fix15(p_noiseLevel->getValue()) : FIX15_ZERO;
         
         // Mix oscillators additively (like SH-101)
-        int32_t mixed_sample32 = multfix15(saw_sample, sawLevel) + 
-                                multfix15(pulse_sample, pulseLevel) + 
-                                multfix15(sub_sample, subLevel) +
-                                multfix15(noise_sample, noiseLevel);
+        int32_t mixed_sample32 = multfix15(saw_sample, sawLevel) + multfix15(pulse_sample, pulseLevel) + multfix15(sub_sample, subLevel) + multfix15(noise_sample, noiseLevel);
         
         // Pure additive oscillator mixing with safe casting
         // Scale down just enough to prevent int16_t overflow, but preserve mixing behavior
