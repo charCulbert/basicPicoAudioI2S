@@ -63,9 +63,9 @@ inline void initialize_parameters() {
   g_synth_parameters.push_back(
       new Parameter("sawLevel", "Saw Level", 0.0f, 1.0f, 1.0f, 79)); // Saw oscillator mix level
   g_synth_parameters.push_back(
-      new Parameter("pulseLevel", "Pulse Level", 0.0f, 1.0f, 0.0f, 80)); // Pulse oscillator mix level
+      new Parameter("pulseLevel", "Pulse Level", 0.0f, 1.0f, 0.5f, 80)); // Pulse oscillator mix level
   g_synth_parameters.push_back(
-      new Parameter("subLevel", "Sub Level", 0.0f, 1.0f, 0.0f, 82)); // Sub oscillator mix level
+      new Parameter("subLevel", "Sub Level", 0.0f, 1.0f, 0.2f, 82)); // Sub oscillator mix level
   g_synth_parameters.push_back(
       new Parameter("noiseLevel", "Noise Level", 0.0f, 1.0f, 0.0f, 78)); // Noise oscillator mix level
   
@@ -77,9 +77,9 @@ inline void initialize_parameters() {
   g_synth_parameters.push_back(
       new Parameter("pwmLfoAmount", "PWM LFO", 0.05f, 0.95f, 0.1f, 85)); // LFO modulation of pulse width
   g_synth_parameters.push_back(
-      new Parameter("pwmLfoRate", "PWM Rate", 0.05f, 5.0f, 0.8f, 86)); // LFO rate for PWM (Hz)
+      new Parameter("pwmLfoRate", "PWM Rate", 0.05f, 4.0f, 0.5f, 86)); // LFO rate for PWM (Hz)
   g_synth_parameters.push_back(
-      new Parameter("pwmEnvAmount", "PWM Env", -1.0f, 1.0f, 0.0f, 87)); // Envelope modulation of pulse width
+      new Parameter("pwmEnvAmount", "PWM Env", -1.0f, 1.0f, 0.2f, 87)); // Envelope modulation of pulse width
 
   // === Filter Parameters ===
   g_synth_parameters.push_back(
@@ -93,6 +93,6 @@ inline void initialize_parameters() {
 
   // === Master Controls ===
   g_synth_parameters.push_back(new Parameter("masterVol", "Master Volume", 0.0f,
-                                             1.0f, 0.05f,
+                                             1.0f, 0.4f,
                                              75)); // Overall output level
 }
