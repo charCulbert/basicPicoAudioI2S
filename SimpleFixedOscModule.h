@@ -145,6 +145,9 @@ private:
     
     float sampleRate;                        // Sample rate (stored for frequency calculations)
     
+    // Global modulation LFO (shared across all voices)
+    fixOscs::oscillator::ModLFO modLfo;
+    
     // === Parameter System ===
     // Pointers to global parameters (shared between control and audio threads)
     // These are read-only from the audio thread perspective
@@ -161,6 +164,9 @@ private:
     Parameter* p_filterResonance = nullptr;
     Parameter* p_filterEnvAmount = nullptr;
     Parameter* p_filterKeyboardTracking = nullptr;
+    Parameter* p_pwmLfoAmount = nullptr;
+    Parameter* p_pwmLfoRate = nullptr;
+    Parameter* p_pwmEnvAmount = nullptr;
     
     
     // === Audio Thread Smoothers ===
@@ -188,6 +194,9 @@ public:
             voice.subOsc.setSampleRate(sample_rate);
             // Noise doesn't need sample rate
         }
+        
+        // Initialize global modulation LFO
+        modLfo.setSampleRate(sample_rate);
 
         // Find our parameters by their string ID from the global store
         for (auto* p : g_synth_parameters) {
@@ -204,6 +213,9 @@ public:
             if (p->getID() == "filterResonance") p_filterResonance = p;
             if (p->getID() == "filterEnvAmount") p_filterEnvAmount = p;
             if (p->getID() == "filterKeyboardTracking") p_filterKeyboardTracking = p;
+            if (p->getID() == "pwmLfoAmount") p_pwmLfoAmount = p;
+            if (p->getID() == "pwmLfoRate") p_pwmLfoRate = p;
+            if (p->getID() == "pwmEnvAmount") p_pwmEnvAmount = p;
         }
         
         // Set ramp times for smoothers
@@ -261,11 +273,33 @@ private:
         // Get envelope value (this handles StealFade for smooth voice stealing)
         fix15 env_level = voice.envelope.getNextValue();
         
-        // Update pulse width for this voice
-        if (p_pulseWidth) {
-            fix15 pulseWidth = float2fix15(p_pulseWidth->getValue());
-            voice.pulseOsc.setPulseWidth(pulseWidth);
-        }
+        // Calculate modulated pulse width (SH-101 style PWM)
+        fix15 basePulseWidth = p_pulseWidth ? float2fix15(p_pulseWidth->getValue()) : FIX15_HALF;
+        fix15 lfoAmount = p_pwmLfoAmount ? float2fix15(p_pwmLfoAmount->getValue()) : FIX15_ZERO;
+        fix15 envAmount = p_pwmEnvAmount ? float2fix15(p_pwmEnvAmount->getValue()) : FIX15_ZERO;
+        
+        // Get LFO and envelope values (LFO is now global, shared across voices)
+        fix15 lfoValue = modLfo.getSample();  // Triangle wave -1 to +1
+        fix15 envValue = env_level;  // Use envelope level for PWM modulation
+        
+        // Apply modulation to pulse width - allow full sweep range
+        // LFO modulation: scale to ±45% range for full sweep (5% to 95%)
+        fix15 lfoModulation = multfix15(lfoValue, lfoAmount);  // Full ±1 range
+        lfoModulation = multfix15(lfoModulation, float2fix15(0.45f)); // Scale to ±45%
+        
+        // Envelope modulation: also ±45% range  
+        fix15 envModulation = multfix15(envValue, envAmount);
+        envModulation = multfix15(envModulation, float2fix15(0.45f));
+        
+        fix15 modulatedWidth = basePulseWidth + lfoModulation + envModulation;
+        
+        // Clamp to valid pulse width range (5% to 95%) - now allows full sweep
+        fix15 minWidth = float2fix15(0.05f);
+        fix15 maxWidth = float2fix15(0.95f);
+        if (modulatedWidth < minWidth) modulatedWidth = minWidth;
+        if (modulatedWidth > maxWidth) modulatedWidth = maxWidth;
+        
+        voice.pulseOsc.setPulseWidth(modulatedWidth);
         
         // Get oscillator samples
         fix15 saw_sample = voice.sawOsc.getSample();
@@ -317,6 +351,11 @@ private:
     
     // Called from audio thread - updates smoothers with new targets from control thread
     void updateControlSignals() {
+        // Update global modulation LFO frequency once per buffer
+        if (p_pwmLfoRate) {
+            fix15 lfoRate = float2fix15(p_pwmLfoRate->getValue());
+            modLfo.setFrequency(lfoRate);
+        }
         // Handle MIDI messages from multicore FIFO
         while (multicore_fifo_rvalid()) {
             uint32_t packet = multicore_fifo_pop_blocking();

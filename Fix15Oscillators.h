@@ -69,6 +69,25 @@ namespace fixOscs::oscillator
         uint32_t seed = 1;
     };
 
+    // General purpose modulation LFO - can be used for PWM, filter, etc.
+    struct ModLFO
+    {
+        void resetPhase() { phase.resetPhase(); }
+        void setSampleRate(float sampleRate) { phase.setSampleRate(sampleRate); }
+        void setFrequency(fix15 frequency) { phase.setFrequency(frequency); }
+
+        fix15 getTriangle();    // Returns triangle wave -1 to +1
+        fix15 getSine();        // Returns sine wave -1 to +1 (approximated)
+        fix15 getSquare();      // Returns square wave -1 to +1
+        fix15 getSaw();         // Returns sawtooth wave -1 to +1
+        
+        // Primary interface - returns triangle by default (classic analog LFO)
+        fix15 getSample() { return getTriangle(); }
+
+    private:
+        Phase phase;
+    };
+
     inline void Phase::setSampleRate(float sampleRate)
     {
         double increment_per_hz = 4294967296.0 / sampleRate;
@@ -130,6 +149,53 @@ namespace fixOscs::oscillator
 
         // Direct cast - int16_t and fix15 have same bit pattern
         return (fix15)noise_sample;
+    }
+
+    inline fix15 ModLFO::getTriangle()
+    {
+        uint32_t p = phase.next();
+        
+        // Create triangle wave from phase
+        // Phase goes 0 -> UINT32_MAX, we want triangle -1 to +1
+        if (p < 0x80000000U) {
+            // First half: ramp up from -1 to +1
+            // Map 0->0x80000000 to -FIX15_ONE->+FIX15_ONE
+            return (fix15)((int32_t)(p >> 15) - FIX15_ONE);
+        } else {
+            // Second half: ramp down from +1 to -1  
+            // Map 0x80000000->UINT32_MAX to +FIX15_ONE->-FIX15_ONE
+            return (fix15)(FIX15_ONE - (int32_t)((p - 0x80000000U) >> 15));
+        }
+    }
+
+    inline fix15 ModLFO::getSine()
+    {
+        uint32_t p = phase.getCurrentPhase();
+        
+        // Simple sine approximation using triangle wave with shaping
+        // Get triangle first
+        fix15 tri = getTriangle();
+        
+        // Apply simple waveshaping for sine-like curve
+        // sin(x) ≈ x - x³/6 for small x, but we'll use simpler approximation
+        // Shape triangle into more sine-like curve
+        fix15 tri_abs = (tri < 0) ? -tri : tri;
+        fix15 shaped = tri - multfix15(multfix15(tri, tri_abs), tri) >> 2;
+        return shaped;
+    }
+
+    inline fix15 ModLFO::getSquare()
+    {
+        uint32_t p = phase.getCurrentPhase();
+        // Simple square wave - same as sub oscillator
+        return (p & 0x80000000) ? -FIX15_ONE : FIX15_ONE;
+    }
+
+    inline fix15 ModLFO::getSaw()
+    {
+        uint32_t p = phase.getCurrentPhase();
+        // Same as main saw oscillator but for modulation
+        return (fix15)(int16_t)(p >> 16);
     }
 
 } // namespace fixOscs::oscillator

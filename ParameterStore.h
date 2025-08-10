@@ -72,6 +72,14 @@ inline void initialize_parameters() {
   // === Oscillator Shape Parameters ===
   g_synth_parameters.push_back(
       new Parameter("pulseWidth", "Pulse Width", 0.05f, 0.95f, 0.5f, 81)); // Pulse width (duty cycle)
+  
+  // === Pulse Width Modulation Parameters ===
+  g_synth_parameters.push_back(
+      new Parameter("pwmLfoAmount", "PWM LFO", 0.05f, 0.95f, 0.1f, 85)); // LFO modulation of pulse width
+  g_synth_parameters.push_back(
+      new Parameter("pwmLfoRate", "PWM Rate", 0.05f, 5.0f, 0.8f, 86)); // LFO rate for PWM (Hz)
+  g_synth_parameters.push_back(
+      new Parameter("pwmEnvAmount", "PWM Env", -1.0f, 1.0f, 0.0f, 87)); // Envelope modulation of pulse width
 
   // === Filter Parameters ===
   g_synth_parameters.push_back(
