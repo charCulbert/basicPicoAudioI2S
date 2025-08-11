@@ -49,7 +49,7 @@ private:
     fix15 stage1, stage2, stage3, stage4;
 };
 
-class SimpleFixedOscModule : public AudioModule {
+class Sh101StyleSynth : public AudioModule {
 private:
     // Number of polyphonic voices
     static constexpr int NUM_VOICES = 4;
@@ -177,10 +177,24 @@ private:
     Fix15SmoothedValue s_decay;            // They're kept for potential future use
     Fix15SmoothedValue s_sustain;
     Fix15SmoothedValue s_release;
+    
+    // === OPTIMIZATION: Cached fix15 parameters (updated once per buffer) ===
+    // Eliminates 128x redundant float->fix15 conversions per buffer
+    fix15 cached_sawLevel = FIX15_ONE;
+    fix15 cached_pulseLevel = FIX15_ZERO;
+    fix15 cached_subLevel = FIX15_ZERO; 
+    fix15 cached_noiseLevel = FIX15_ZERO;
+    fix15 cached_basePulseWidth = FIX15_HALF;
+    fix15 cached_pwmLfoAmount = FIX15_ZERO;
+    fix15 cached_pwmEnvAmount = FIX15_ZERO;
+    fix15 cached_filterCutoff = float2fix15(0.5f);
+    fix15 cached_filterResonance = float2fix15(0.2f);
+    fix15 cached_filterEnvAmount = FIX15_ZERO;
+    fix15 cached_filterKeyboardTracking = FIX15_ZERO;
 
 
 public:
-    explicit SimpleFixedOscModule(float sample_rate)
+    explicit Sh101StyleSynth(float sample_rate)
     : sampleRate(sample_rate) {
         // Initialize voices
         voices.reserve(NUM_VOICES);
@@ -273,10 +287,10 @@ private:
         // Get envelope value (this handles StealFade for smooth voice stealing)
         fix15 env_level = voice.envelope.getNextValue();
         
-        // Calculate modulated pulse width (SH-101 style PWM)
-        fix15 basePulseWidth = p_pulseWidth ? float2fix15(p_pulseWidth->getValue()) : FIX15_HALF;
-        fix15 lfoAmount = p_pwmLfoAmount ? float2fix15(p_pwmLfoAmount->getValue()) : FIX15_ZERO;
-        fix15 envAmount = p_pwmEnvAmount ? float2fix15(p_pwmEnvAmount->getValue()) : FIX15_ZERO;
+        // Calculate modulated pulse width (SH-101 style PWM) - OPTIMIZED: Use cached values
+        fix15 basePulseWidth = cached_basePulseWidth;
+        fix15 lfoAmount = cached_pwmLfoAmount;
+        fix15 envAmount = cached_pwmEnvAmount;
         
         // Get LFO and envelope values (LFO is now global, shared across voices)
         fix15 lfoValue = modLfo.getSample();  // Triangle wave -1 to +1
@@ -307,11 +321,11 @@ private:
         fix15 sub_sample = voice.subOsc.getSample();  // Back to separate sub oscillator
         fix15 noise_sample = voice.noiseOsc.getSample();
         
-        // Get mix levels (SH-101 style - each oscillator has independent level)
-        fix15 sawLevel = p_sawLevel ? float2fix15(p_sawLevel->getValue()) : FIX15_ONE;
-        fix15 pulseLevel = p_pulseLevel ? float2fix15(p_pulseLevel->getValue()) : FIX15_ZERO;
-        fix15 subLevel = p_subLevel ? float2fix15(p_subLevel->getValue()) : FIX15_ZERO;
-        fix15 noiseLevel = p_noiseLevel ? float2fix15(p_noiseLevel->getValue()) : FIX15_ZERO;
+        // Get mix levels (SH-101 style - each oscillator has independent level) - OPTIMIZED: Use cached values
+        fix15 sawLevel = cached_sawLevel;
+        fix15 pulseLevel = cached_pulseLevel;
+        fix15 subLevel = cached_subLevel;
+        fix15 noiseLevel = cached_noiseLevel;
         
         // Mix oscillators additively (like SH-101)
         int32_t mixed_sample32 = multfix15(saw_sample, sawLevel) + multfix15(pulse_sample, pulseLevel) + multfix15(sub_sample, subLevel) + multfix15(noise_sample, noiseLevel);
@@ -321,16 +335,24 @@ private:
         mixed_sample32 = mixed_sample32 >> 2;  // Divide by 4 to allow up to 4 oscillators at full level
         fix15 mixed_sample = (fix15)mixed_sample32;
         
-        // Apply per-voice filter with envelope and keyboard tracking modulation
-        fix15 base_cutoff = p_filterCutoff ? float2fix15(p_filterCutoff->getValue()) : float2fix15(0.5f);
-        fix15 env_amount = p_filterEnvAmount ? float2fix15(p_filterEnvAmount->getValue()) : FIX15_ZERO;
-        fix15 kbd_amount = p_filterKeyboardTracking ? float2fix15(p_filterKeyboardTracking->getValue()) : FIX15_ZERO;
-        fix15 resonance = p_filterResonance ? float2fix15(p_filterResonance->getValue()) : float2fix15(0.2f);
+        // Apply per-voice filter with envelope and keyboard tracking modulation - OPTIMIZED: Use cached values
+        fix15 base_cutoff = cached_filterCutoff;
+        fix15 env_amount = cached_filterEnvAmount;
+        fix15 kbd_amount = cached_filterKeyboardTracking;
+        fix15 resonance = cached_filterResonance;
         
-        // Calculate keyboard tracking offset (relative to C4 = MIDI note 60)
+        // Calculate keyboard tracking offset (relative to C4 = MIDI note 60) - OPTIMIZED: Pre-compute table
         // Each octave up/down adds/subtracts a smaller amount for musical tracking
-        int note_offset = (int)voice.midiNote - 60;  // Distance from C4
-        fix15 kbd_offset = multfix15(float2fix15((note_offset / 12.0f) * 0.3f), kbd_amount);  // Convert to octaves, scale down by 30%
+        static fix15 kbd_tracking_table[128];
+        static bool kbd_table_initialized = false;
+        if (!kbd_table_initialized) {
+            for (int i = 0; i < 128; ++i) {
+                int note_offset = i - 60;  // Distance from C4
+                kbd_tracking_table[i] = float2fix15((note_offset / 12.0f) * 0.15f);
+            }
+            kbd_table_initialized = true;
+        }
+        fix15 kbd_offset = multfix15(kbd_tracking_table[voice.midiNote], kbd_amount);
         
         // Modulate filter cutoff: base + envelope + keyboard tracking
         fix15 modulated_cutoff = base_cutoff + multfix15(env_level, env_amount) + kbd_offset;
@@ -351,6 +373,20 @@ private:
     
     // Called from audio thread - updates smoothers with new targets from control thread
     void updateControlSignals() {
+        // === OPTIMIZATION: Cache all parameters as fix15 once per buffer ===
+        // This eliminates 128x redundant float->fix15 conversions per buffer
+        cached_sawLevel = p_sawLevel ? float2fix15(p_sawLevel->getValue()) : FIX15_ONE;
+        cached_pulseLevel = p_pulseLevel ? float2fix15(p_pulseLevel->getValue()) : FIX15_ZERO;
+        cached_subLevel = p_subLevel ? float2fix15(p_subLevel->getValue()) : FIX15_ZERO;
+        cached_noiseLevel = p_noiseLevel ? float2fix15(p_noiseLevel->getValue()) : FIX15_ZERO;
+        cached_basePulseWidth = p_pulseWidth ? float2fix15(p_pulseWidth->getValue()) : FIX15_HALF;
+        cached_pwmLfoAmount = p_pwmLfoAmount ? float2fix15(p_pwmLfoAmount->getValue()) : FIX15_ZERO;
+        cached_pwmEnvAmount = p_pwmEnvAmount ? float2fix15(p_pwmEnvAmount->getValue()) : FIX15_ZERO;
+        cached_filterCutoff = p_filterCutoff ? float2fix15(p_filterCutoff->getValue()) : float2fix15(0.5f);
+        cached_filterResonance = p_filterResonance ? float2fix15(p_filterResonance->getValue()) : float2fix15(0.2f);
+        cached_filterEnvAmount = p_filterEnvAmount ? float2fix15(p_filterEnvAmount->getValue()) : FIX15_ZERO;
+        cached_filterKeyboardTracking = p_filterKeyboardTracking ? float2fix15(p_filterKeyboardTracking->getValue()) : FIX15_ZERO;
+        
         // Update global modulation LFO frequency once per buffer
         if (p_pwmLfoRate) {
             fix15 lfoRate = float2fix15(p_pwmLfoRate->getValue());

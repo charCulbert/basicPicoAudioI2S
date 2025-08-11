@@ -75,7 +75,7 @@ inline void initialize_parameters() {
   
   // === Pulse Width Modulation Parameters ===
   g_synth_parameters.push_back(
-      new Parameter("pwmLfoAmount", "PWM LFO", 0.05f, 0.95f, 0.1f, 85)); // LFO modulation of pulse width
+      new Parameter("pwmLfoAmount", "PWM LFO", 0.00f, 0.95f, 0.1f, 85)); // LFO modulation of pulse width
   g_synth_parameters.push_back(
       new Parameter("pwmLfoRate", "PWM Rate", 0.05f, 4.0f, 0.5f, 86)); // LFO rate for PWM (Hz)
   g_synth_parameters.push_back(

@@ -8,7 +8,7 @@
 #include "ParameterStore.h"
 #include "GainModule.h"
 #include "MidiSerialListener.h"
-#include "SimpleFixedOscModule.h"
+#include "Sh101StyleSynth.h"
 
 // --- Synth-Specific Module Headers ---
 // #include "freqModSineModule.h"
@@ -26,7 +26,7 @@ void main_core1() {
                             ActiveAudioOutput::BUFFER_SIZE);
 
   // 2. Create audio modules in processing order
-  static SimpleFixedOscModule synth_voice((float)ActiveAudioOutput::SAMPLE_RATE);
+  static Sh101StyleSynth synth_voice((float)ActiveAudioOutput::SAMPLE_RATE);
   static GainModule master_gain((float)ActiveAudioOutput::SAMPLE_RATE);
 
   // 3. Add modules to engine in processing order (filter now per-voice)

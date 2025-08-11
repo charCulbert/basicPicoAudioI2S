@@ -11,8 +11,6 @@ Makefile
 *.cmakein
 *.swp
 
-choc/
-
 # Output/binary artifacts
 *.elf
 *.map
@@ -38,6 +36,3 @@ pico-extras/
 
 # Backup files
 *~
-
-#choc
-include/choc

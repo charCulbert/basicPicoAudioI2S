@@ -49,7 +49,7 @@ include(pico_sdk_import.cmake)
 # -----------------------------------------------------------------------------
 # Define the project and the languages used (C, C++, and ASM)
 # -----------------------------------------------------------------------------
-project(basicPicoAudio C CXX ASM)
+project(PicoSynth C CXX ASM)
 
 # -----------------------------------------------------------------------------
 # Set the C and C++ standard versions
@@ -72,19 +72,19 @@ endif()
 
 
 # -----------------------------------------------------------------------------
-# Define the executable target 'basicPicoAudio' with its source files.
+# Define the executable target 'PicoSynth' with its source files.
 # -----------------------------------------------------------------------------
-add_executable(basicPicoAudio
+add_executable(PicoSynth
         main.cpp
 )
 
-pico_generate_pio_header(basicPicoAudio ${CMAKE_CURRENT_LIST_DIR}/audio_i2s.pio)
+pico_generate_pio_header(PicoSynth ${CMAKE_CURRENT_LIST_DIR}/audio_i2s.pio)
 
 
 # -----------------------------------------------------------------------------
 # Specify include directories for the target
 # -----------------------------------------------------------------------------
-target_include_directories(basicPicoAudio PRIVATE
+target_include_directories(PicoSynth PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 
         choc
@@ -94,7 +94,7 @@ target_include_directories(basicPicoAudio PRIVATE
 # -----------------------------------------------------------------------------
 # Link the target with the required Pico libraries
 # -----------------------------------------------------------------------------
-target_link_libraries(basicPicoAudio PRIVATE
+target_link_libraries(PicoSynth PRIVATE
         pico_stdlib
         pico_multicore
         hardware_dma
@@ -109,22 +109,22 @@ target_link_libraries(basicPicoAudio PRIVATE
 # -----------------------------------------------------------------------------
 # Set C++ compile features (C++17 in this case)
 # -----------------------------------------------------------------------------
-target_compile_features(basicPicoAudio PRIVATE cxx_std_17)
+target_compile_features(PicoSynth PRIVATE cxx_std_17)
 
 # -----------------------------------------------------------------------------
 # Define compile-time preprocessor definitions for I2S configuration.
 # Adjust these definitions as needed.
 # -----------------------------------------------------------------------------
-target_compile_definitions(basicPicoAudio PRIVATE
+target_compile_definitions(PicoSynth PRIVATE
 )
 
 # -------------------------------------------------------------------------------
 # Enable USB serial and UART for debugging
 # -----------------------------------------------------------------------------
-pico_enable_stdio_usb(basicPicoAudio 1)
-pico_enable_stdio_uart(basicPicoAudio 1)
+pico_enable_stdio_usb(PicoSynth 1)
+pico_enable_stdio_uart(PicoSynth 1)
 
 # -----------------------------------------------------------------------------
 # Generate additional output files (map/bin/hex, etc.)
 # -----------------------------------------------------------------------------
-pico_add_extra_outputs(basicPicoAudio)
+pico_add_extra_outputs(PicoSynth)
