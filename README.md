@@ -12,7 +12,8 @@ Also included is an html page which serves as a controller for the synth -- auto
 - I2S DAC connected to pins 19-21
 - Optional: MIDI input via USB serial
 
-![Pico and PCM5102A](picoSetup.png)
+<img src="picoSetup.png" width="250"> 
+
 *The pico connected to the PCM5102A -- seen here setup with a second pico acting as a debugger.*
 ![HTML Controller](htmlController.png)
 *HTML controller will automatically load params from the pico upon connection*
