@@ -331,8 +331,8 @@ private:
         int32_t mixed_sample32 = multfix15(saw_sample, sawLevel) + multfix15(pulse_sample, pulseLevel) + multfix15(sub_sample, subLevel) + multfix15(noise_sample, noiseLevel);
         
         // Pure additive oscillator mixing with safe casting
-        // Scale down just enough to prevent int16_t overflow, but preserve mixing behavior
-        mixed_sample32 = mixed_sample32 >> 2;  // Divide by 4 to allow up to 4 oscillators at full level
+        // Scale down to prevent overflow while preserving more signal level
+        mixed_sample32 = mixed_sample32 >> 1;  // Divide by 2 instead of 4 for better output level
         fix15 mixed_sample = (fix15)mixed_sample32;
         
         // Apply per-voice filter with envelope and keyboard tracking modulation - OPTIMIZED: Use cached values

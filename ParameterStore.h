@@ -85,7 +85,7 @@ inline void initialize_parameters() {
   g_synth_parameters.push_back(
       new Parameter("filterCutoff", "Cutoff", 0.0f, 1.0f, 0.5f, 76));
   g_synth_parameters.push_back(
-      new Parameter("filterResonance", "Resonance", 0.0f, 1.0f, 0.2f, 77));
+      new Parameter("filterResonance", "Resonance", 0.0f, 0.9f, 0.2f, 77));
   g_synth_parameters.push_back(
       new Parameter("filterEnvAmount", "Filter Env Amount", -1.0f, 1.0f, 0.0f, 83)); // Filter envelope modulation depth
   g_synth_parameters.push_back(
