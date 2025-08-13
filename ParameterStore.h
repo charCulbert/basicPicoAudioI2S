@@ -1,16 +1,5 @@
 /**
- * ParameterStore.h - Global Parameter Management System
- *
- * Provides centralized storage and initialization for all synthesizer
- * parameters. Uses a global vector as the "single source of truth" for
- * parameter access across different threads and modules.
- *
- * Design Principles:
- * - Single global store prevents parameter duplication
- * - Initialization happens once at startup before audio processing begins
- * - Thread-safe: Parameter objects use atomic storage internally
- * - Lookup by string ID allows flexible parameter binding
- * - MIDI CC numbers integrated for hardware control
+ * ParameterStore.h
  */
 
 #pragma once
@@ -31,18 +20,6 @@
  */
 inline std::vector<Parameter *> g_synth_parameters;
 
-/**
- * Initialize all synthesizer parameters in the global store
- *
- * CRITICAL: Must be called exactly once at system startup,
- * BEFORE launching the audio thread or any parameter access.
- *
- * Parameter Design:
- * - Physical ranges chosen for musical usefulness
- * - Default values provide reasonable starting sounds
- * - MIDI CC numbers assigned for standard hardware controllers
- * - String IDs match audio module expectations
- */
 inline void initialize_parameters() {
   // Clear any previous parameters to be safe (for re-initialization)
   for (auto *p : g_synth_parameters)
@@ -93,6 +70,6 @@ inline void initialize_parameters() {
 
   // === Master Controls ===
   g_synth_parameters.push_back(new Parameter("masterVol", "Master Volume", 0.0f,
-                                             0.8f, 0.4f,
+                                             0.7f, 0.4f,
                                              75)); // Overall output level
 }
