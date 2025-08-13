@@ -93,6 +93,6 @@ inline void initialize_parameters() {
 
   // === Master Controls ===
   g_synth_parameters.push_back(new Parameter("masterVol", "Master Volume", 0.0f,
-                                             1.0f, 0.4f,
+                                             0.8f, 0.4f,
                                              75)); // Overall output level
 }

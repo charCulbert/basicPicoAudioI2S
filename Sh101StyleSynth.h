@@ -37,10 +37,13 @@ public:
         stage3 = stage3 + multfix15(g, stage2 - stage3);
         stage4 = stage4 + multfix15(g, stage3 - stage4);
         
-        // Makeup gain (2.5x) to compensate for filter loss
-        fix15 output = stage4 + (stage4 >> 1);  // * 1.5, then we'll add more
-        output = output + (output >> 2);        // * 1.25 more = 1.5 * 1.25 = 1.875
-        output = output + (output >> 3);        // * 1.125 more = 1.875 * 1.125 ≈ 2.1
+        // makeup gain (2.5x base + resonance compensation)
+        fix15 output = stage4 + (stage4 >> 1);
+        output = output + (output >> 1);
+
+        // Additional gain based on resonance level (up to +50% at max resonance)
+        fix15 resonance_compensation = multfix15(resonance, output >> 1);  // 0.5x * resonance
+        output = output + resonance_compensation;
         
         return output;
     }
@@ -269,7 +272,7 @@ public:
                 }
             }
             
-            // Scale down by voice count for suitable codec/headphone level - use bit shift for performance
+            // Scale down to avoid clipping output
             fix15 finalSample = (fix15)(mixedSample32 >> 3); // Divide by 8 using bit shift
 
         // Output to all channels
@@ -332,7 +335,7 @@ private:
         
         // Pure additive oscillator mixing with safe casting
         // Scale down to prevent overflow while preserving more signal level
-        mixed_sample32 = mixed_sample32 >> 1;  // Divide by 2 instead of 4 for better output level
+        mixed_sample32 = mixed_sample32 >> 2;  //
         fix15 mixed_sample = (fix15)mixed_sample32;
         
         // Apply per-voice filter with envelope and keyboard tracking modulation - OPTIMIZED: Use cached values
