@@ -44,18 +44,18 @@ void main_core1() {
 // Core 0: The Control Thread
 //==============================================================================
 int main() {
-  // --- Overclocking Section (BEFORE USB init) ---
-  // Set the core voltage. VREG_VOLTAGE_1_15 is a safe level for a 250MHz
-  // overclock.
+  // Initialize USB FIRST with default clock
+  stdio_init_all();
+  sleep_ms(1000); // Allow USB to enumerate
+  
+  // --- Overclocking Section (AFTER USB init) ---
+  // Set the core voltage. VREG_VOLTAGE_1_15 is a safe level for a 250MHz overclock.
   vreg_set_voltage(VREG_VOLTAGE_1_15);
   sleep_ms(2); // Allow voltage to stabilize
   // Set the system clock to 250 MHz (the SDK takes the frequency in KHz)
   set_sys_clock_khz(250000, true);
   sleep_ms(2);
   // ----------------------------
-
-  stdio_init_all();
-  sleep_ms(3000);
 
 
   // IMPORTANT: Initialize the global parameter store BEFORE launching Core 1
