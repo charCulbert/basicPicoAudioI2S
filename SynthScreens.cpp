@@ -1,20 +1,31 @@
 #include "SynthScreens.h"
+#include "ParameterStore.h"
 #include <cmath>
 #include <algorithm>
 #include <cctype>
 
 SynthScreenManager::SynthScreenManager() 
-    : current_screen_(SynthScreen::PARAM_ONLY)
+    : current_screen_(SynthScreen::WAVEFORM)
     , last_auto_screen_(SynthScreen::PARAM_ONLY)
     , screen_switch_time_(0)
-    , screen_timeout_ms_(3000)  // Show specialized screen for 3 seconds
+    , screen_timeout_ms_(500)  // Show parameter screen for 1 second
     , last_update_time_(0)
     , update_interval_ms_(100)  // 10fps for smooth graphics
     , has_pending_update_(false)
+    , waveform_write_pos_(0)
+    , waveform_scale_(1.0f)
     , display_(nullptr) {
     
     display_ = new OledDisplay();
     display_->init();
+    
+    // Initialize waveform buffer to zero
+    for (int i = 0; i < WAVEFORM_BUFFER_SIZE; i++) {
+        waveform_buffer_[i] = 0.0f;
+    }
+    
+    // Load actual parameter values from the synth instead of using defaults
+    loadParameterValuesFromStore();
 }
 
 void SynthScreenManager::showParameter(const std::string& name, float value) {
@@ -30,34 +41,46 @@ void SynthScreenManager::showParameter(const std::string& name, float value) {
     // Detect which screen this parameter belongs to
     SynthScreen target_screen = detectScreenFromParameter(name);
     
-    // Switch to the appropriate screen
-    if (target_screen != SynthScreen::PARAM_ONLY) {
+    // Switch to the appropriate screen (only if different from current)
+    if (target_screen != SynthScreen::PARAM_ONLY && target_screen != current_screen_) {
         switchToScreen(target_screen);
+        // Force immediate update when switching screens
+        has_pending_update_ = true;
+    } else if (target_screen != SynthScreen::PARAM_ONLY) {
+        // If already on correct screen, just refresh the timeout
+        screen_switch_time_ = to_ms_since_boot(get_absolute_time());
     }
     
-    // Rate limit the actual display updates
-    uint32_t now = to_ms_since_boot(get_absolute_time());
-    if (now - last_update_time_ >= update_interval_ms_) {
-        drawCurrentScreen();
-        last_update_time_ = now;
-        has_pending_update_ = false;
-    }
+    // Display updates handled by update() method - no duplicate drawing here
 }
 
 void SynthScreenManager::update() {
     uint32_t now = to_ms_since_boot(get_absolute_time());
     
-    // Handle screen timeout - return to param-only view
-    if (current_screen_ != SynthScreen::PARAM_ONLY && 
+    // Handle screen timeout - return to waveform view  
+    if (current_screen_ != SynthScreen::WAVEFORM && 
         (now - screen_switch_time_) > screen_timeout_ms_) {
-        current_screen_ = SynthScreen::PARAM_ONLY;
+        current_screen_ = SynthScreen::WAVEFORM;
     }
     
-    // Handle pending updates
-    if (has_pending_update_ && (now - last_update_time_) >= update_interval_ms_) {
+    // Simple update logic: parameter screens when needed, waveform continuously
+    if (has_pending_update_) {
+        // Immediate update for parameter changes
+        drawCurrentScreen();
+        has_pending_update_ = false;
+        last_update_time_ = now;
+    } else if (current_screen_ == SynthScreen::WAVEFORM && 
+               (now - last_update_time_) >= update_interval_ms_) {
+        // Continuous updates for waveform screen only
         drawCurrentScreen();
         last_update_time_ = now;
-        has_pending_update_ = false;
+    }
+    
+    // Also update parameter screens periodically when active (for fader animation)
+    else if (current_screen_ != SynthScreen::WAVEFORM && 
+             (now - last_update_time_) >= update_interval_ms_) {
+        drawCurrentScreen();
+        last_update_time_ = now;
     }
 }
 
@@ -74,7 +97,8 @@ void SynthScreenManager::nextScreen() {
         case SynthScreen::MIXER: switchToScreen(SynthScreen::FILTER); break;
         case SynthScreen::FILTER: switchToScreen(SynthScreen::PWM); break;
         case SynthScreen::PWM: switchToScreen(SynthScreen::MASTER); break;
-        case SynthScreen::MASTER: switchToScreen(SynthScreen::PARAM_ONLY); break;
+        case SynthScreen::MASTER: switchToScreen(SynthScreen::WAVEFORM); break;
+        case SynthScreen::WAVEFORM: switchToScreen(SynthScreen::PARAM_ONLY); break;
     }
 }
 
@@ -148,6 +172,9 @@ void SynthScreenManager::storeParameterValue(const std::string& name, float valu
     else if (name == "pwmLfoAmount") pwm_lfo_amount_ = value;
     else if (name == "pwmLfoRate") pwm_lfo_rate_ = value;
     else if (name == "pwmEnvAmount") pwm_env_amount_ = value;
+    
+    // Waveform display parameters
+    else if (name == "waveformToggle") waveform_scale_ = 1.0f + (value * 9.0f);  // Scale from 1x to 10x
 }
 
 void SynthScreenManager::drawCurrentScreen() {
@@ -157,6 +184,7 @@ void SynthScreenManager::drawCurrentScreen() {
         case SynthScreen::FILTER: drawFilterScreen(); break;
         case SynthScreen::PWM: drawPWMScreen(); break;
         case SynthScreen::MASTER: drawMasterScreen(); break;
+        case SynthScreen::WAVEFORM: drawWaveformScreen(); break;
         case SynthScreen::PARAM_ONLY: drawParamOnlyScreen(); break;
     }
 }
@@ -244,6 +272,56 @@ void SynthScreenManager::drawMasterScreen() {
     updateDisplay();
 }
 
+void SynthScreenManager::drawWaveformScreen() {
+    clearScreen();
+    
+    // Draw oscilloscope-style waveform
+    const int scope_x = 0;
+    const int scope_y = 4;
+    const int scope_w = 128;
+    const int scope_h = 50;
+    const int center_y = scope_y + scope_h / 2;
+    
+    // No center line - cleaner waveform display
+    
+    // Draw waveform samples starting from current write position for most recent data
+    // Use interpolation to make waveform look smoother despite lower sample rate
+    for (int x = 0; x < scope_w - 1; x++) {
+        // Calculate buffer indices for circular buffer
+        int idx1 = (waveform_write_pos_ - scope_w + x + WAVEFORM_BUFFER_SIZE) % WAVEFORM_BUFFER_SIZE;
+        int idx2 = (waveform_write_pos_ - scope_w + x + 1 + WAVEFORM_BUFFER_SIZE) % WAVEFORM_BUFFER_SIZE;
+        
+        // Scale samples to display height using adjustable scale factor (oscilloscope-like scaling)
+        int y1 = center_y - (int)(waveform_buffer_[idx1] * scope_h * waveform_scale_ * 2.0f);
+        int y2 = center_y - (int)(waveform_buffer_[idx2] * scope_h * waveform_scale_ * 2.0f);
+        
+        // Clamp to screen bounds  
+        y1 = std::max(scope_y, std::min(y1, scope_y + scope_h - 1));
+        y2 = std::max(scope_y, std::min(y2, scope_y + scope_h - 1));
+        
+        // Draw line segment
+        drawLine(scope_x + x, y1, scope_x + x + 1, y2);
+    }
+    
+    // Add label at bottom
+    drawText("WAVEFORM", 35, 58);
+    
+    updateDisplay();
+}
+
+void SynthScreenManager::feedAudioSamples(const float* samples, int num_samples) {
+    // Simply copy samples into circular buffer
+    for (int i = 0; i < num_samples; i++) {
+        waveform_buffer_[waveform_write_pos_] = samples[i];
+        waveform_write_pos_++;
+        
+        // Wrap around when buffer is full
+        if (waveform_write_pos_ >= WAVEFORM_BUFFER_SIZE) {
+            waveform_write_pos_ = 0;
+        }
+    }
+}
+
 void SynthScreenManager::drawParamOnlyScreen() {
     clearScreen();
     
@@ -259,6 +337,15 @@ void SynthScreenManager::drawParamOnlyScreen() {
     }
     
     updateDisplay();
+}
+
+void SynthScreenManager::loadParameterValuesFromStore() {
+    // Load all parameter values from the global parameter store
+    for (auto* param : g_synth_parameters) {
+        if (param) {
+            storeParameterValue(param->getID(), param->getNormalizedValue());
+        }
+    }
 }
 
 // Drawing helpers
@@ -336,5 +423,11 @@ void switchSynthScreen(SynthScreen screen) {
 void nextSynthScreen() {
     if (global_screen_manager) {
         global_screen_manager->nextScreen();
+    }
+}
+
+void feedSynthWaveform(const float* samples, int num_samples) {
+    if (global_screen_manager) {
+        global_screen_manager->feedAudioSamples(samples, num_samples);
     }
 }

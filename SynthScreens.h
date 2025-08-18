@@ -10,6 +10,7 @@ enum class SynthScreen {
     FILTER,
     PWM,  // Pulse Width Modulation screen with 4 faders
     MASTER,  // Master volume screen
+    WAVEFORM,  // Oscilloscope view of current audio
     PARAM_ONLY  // Just show parameter name/value
 };
 
@@ -20,6 +21,9 @@ public:
     // Main interface - shows parameter and switches screens intelligently
     void showParameter(const std::string& name, float value);
     void update();
+    
+    // Audio data for oscilloscope
+    void feedAudioSamples(const float* samples, int num_samples);
     
     // Manual screen switching
     void switchToScreen(SynthScreen screen);
@@ -63,6 +67,12 @@ private:
     float pwm_lfo_rate_ = 0.5f;
     float pwm_env_amount_ = 0.2f;
     
+    // Waveform display buffer for oscilloscope
+    static const int WAVEFORM_BUFFER_SIZE = 128;  // 128 pixels wide
+    float waveform_buffer_[WAVEFORM_BUFFER_SIZE];
+    int waveform_write_pos_ = 0;
+    float waveform_scale_ = 1.0f;  // Scaling factor for waveform display
+    
     OledDisplay* display_;
     
     // Screen detection
@@ -80,6 +90,7 @@ private:
     void drawFilterScreen();
     void drawPWMScreen();
     void drawMasterScreen();
+    void drawWaveformScreen();
     void drawParamOnlyScreen();
     
     // Drawing helpers
@@ -93,6 +104,7 @@ private:
     
     // Store parameter values
     void storeParameterValue(const std::string& name, float value);
+    void loadParameterValuesFromStore();
 };
 
 // Global interface functions
@@ -100,3 +112,4 @@ void showSynthParameter(const std::string& name, float value);
 void updateSynthScreens();
 void switchSynthScreen(SynthScreen screen);
 void nextSynthScreen();
+void feedSynthWaveform(const float* samples, int num_samples);

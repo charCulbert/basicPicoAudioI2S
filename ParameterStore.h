@@ -72,4 +72,9 @@ inline void initialize_parameters() {
   g_synth_parameters.push_back(new Parameter("masterVol", "Master Volume", 0.0f,
                                              0.7f, 0.4f,
                                              75)); // Overall output level
+                                             
+  // === Display Controls ===
+  g_synth_parameters.push_back(new Parameter("waveformToggle", "Waveform Scale", 0.0f,
+                                             1.0f, 0.8f,
+                                             127)); // Waveform display scaling (1x to 10x, default 9x)
 }

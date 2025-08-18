@@ -55,7 +55,7 @@ private:
 class Sh101StyleSynth : public AudioModule {
 private:
     // Number of polyphonic voices
-    static constexpr int NUM_VOICES = 4;
+    static constexpr int NUM_VOICES = 2;
     
     struct Voice {
         // DSP objects per voice
@@ -147,6 +147,7 @@ private:
     size_t next_voice_to_steal = 0;
     
     float sampleRate;                        // Sample rate (stored for frequency calculations)
+    uint8_t waveform_counter = 0;           // Counter for waveform display decimation
     
     // Global modulation LFO (shared across all voices)
     fixOscs::oscillator::ModLFO modLfo;
@@ -274,6 +275,13 @@ public:
             
             // Scale down to avoid clipping output
             fix15 finalSample = (fix15)(mixedSample32 >> 3); // Divide by 8 using bit shift
+
+            // Send occasional samples for waveform display (minimal CPU overhead)
+            if (++waveform_counter == 16) {  // Every 128th sample, avoid modulo operation
+                waveform_counter = 0;
+                // Pack fix15 directly as uint32_t (no float conversion in audio thread)
+                multicore_fifo_push_timeout_us((uint32_t)(finalSample + 32768), 0);
+            }
 
         // Output to all channels
             for (uint32_t ch = 0; ch < buffer.getNumChannels(); ++ch) {

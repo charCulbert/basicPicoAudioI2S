@@ -72,20 +72,31 @@ int main() {
   writeToOled("PICO SYNTH\nREADY");
   sleep_ms(2000);
   
-  // OPTIONAL: Create screen manager for parameter displays
-  // Comment out this line to disable OLED parameter screens  
-  SynthScreenManager screen_manager;
-  
   // Launch the audio engine on the second core
   multicore_launch_core1(main_core1);
 
   // Create the listeners that will run on this core
   MidiSerialListener midi_listener;
+  
+  // Note: Screen manager is created automatically when first parameter is changed
 
   // The main control loop for Core 0
   while (true) {
     midi_listener.update();
-    screen_manager.update(); // Handle display updates
+    
+    // Receive audio samples from Core 1 for waveform display
+    while (multicore_fifo_rvalid()) {
+      uint32_t data = multicore_fifo_pop_blocking();
+      
+      // Unpack fix15 from uint32_t and convert to float on Core 0
+      int16_t fix15_sample = (int16_t)(data - 32768);
+      float sample = (float)fix15_sample / 32768.0f;
+      
+      // Feed to global screen manager (single sample at a time)
+      feedSynthWaveform(&sample, 1);
+    }
+    
+    updateSynthScreens(); // Handle display updates
   }
 
   return 0; // Will never be reached
