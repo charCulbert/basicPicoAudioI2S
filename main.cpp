@@ -9,6 +9,8 @@
 #include "GainModule.h"
 #include "MidiSerialListener.h"
 #include "Sh101StyleSynth.h"
+#include "SynthScreens.h"
+#include "OledDisplay.h"
 
 // --- Synth-Specific Module Headers ---
 // #include "freqModSineModule.h"
@@ -65,6 +67,15 @@ int main() {
   printf("LOG:--- Pico Synth (Integrated Voice) Initialized ---\n");
   printf("LOG: System clock is running at %lu kHz\n",
          clock_get_hz(clk_sys) / 1000);
+  
+  // Initialize OLED display with welcome message
+  writeToOled("PICO SYNTH\nREADY");
+  sleep_ms(2000);
+  
+  // OPTIONAL: Create screen manager for parameter displays
+  // Comment out this line to disable OLED parameter screens  
+  SynthScreenManager screen_manager;
+  
   // Launch the audio engine on the second core
   multicore_launch_core1(main_core1);
 
@@ -74,6 +85,7 @@ int main() {
   // The main control loop for Core 0
   while (true) {
     midi_listener.update();
+    screen_manager.update(); // Handle display updates
   }
 
   return 0; // Will never be reached

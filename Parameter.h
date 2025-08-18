@@ -24,6 +24,8 @@
 #include <cassert>
 #include <algorithm>
 
+// Forward declaration
+void showSynthParameter(const std::string& name, float value);
 /**
  * Thread-safe parameter class for real-time audio applications
  * 
@@ -75,6 +77,7 @@ public:
     void setValue(float newValue) {
         newValue = std::max(minimum, std::min(newValue, maximum));
         value.store(newValue, std::memory_order_relaxed);
+        showSynthParameter(this->parameterID, this->getNormalizedValue());
     }
 
     /**
@@ -104,6 +107,7 @@ public:
     void setNormalizedValue(float norm) {
         norm = std::max(0.0f, std::min(norm, 1.0f));
         setValue(minimum + norm * (maximum - minimum));
+        showSynthParameter(this->parameterID, this->getNormalizedValue());
     }
 
     // === Accessors for Parameter Metadata ===
