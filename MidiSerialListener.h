@@ -29,7 +29,6 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "ParameterStore.h"
-#include "SynthScreens.h"
 
 // MIDI command types for inter-core communication
 enum MidiCommandType { NOTE_OFF_CMD = 0x80, NOTE_ON_CMD = 0x90, ALL_NOTES_OFF_CMD = 0xB0 };

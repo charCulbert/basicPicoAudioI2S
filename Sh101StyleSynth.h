@@ -277,7 +277,7 @@ public:
             fix15 finalSample = (fix15)(mixedSample32 >> 3); // Divide by 8 using bit shift
 
             // Send occasional samples for waveform display (minimal CPU overhead)
-            if (++waveform_counter == 16) {  // Every 128th sample, avoid modulo operation
+            if (++waveform_counter == 4) {  // Every 128th sample, avoid modulo operation
                 waveform_counter = 0;
                 // Pack fix15 directly as uint32_t (no float conversion in audio thread)
                 multicore_fifo_push_timeout_us((uint32_t)(finalSample + 32768), 0);

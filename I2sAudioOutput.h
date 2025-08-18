@@ -22,7 +22,6 @@
 
 // include Fix15 stuff
 #include "Fix15.h"
-#include "SynthScreens.h"
 
 /**
  * I2sAudioOutput - High-Quality I2S Audio Driver for RP2040
