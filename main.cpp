@@ -80,12 +80,16 @@ int main() {
   
   // Note: Screen manager is created automatically when first parameter is changed
 
-  // The main control loop for Core 0
+  // The main control loop for Core 0 - MIDI gets absolute priority
   while (true) {
-    midi_listener.update();
+    // 1. MIDI processing - ALWAYS gets priority, run multiple times per loop
+    for (int i = 0; i < 5; i++) {
+      midi_listener.update();
+    }
     
-    // Receive audio samples from Core 1 for waveform display
-    while (multicore_fifo_rvalid()) {
+    // 2. Process audio samples from Core 1 for waveform display (limit processing)
+    int sample_count = 0;
+    while (multicore_fifo_rvalid() && sample_count < 32) {  // Limit to 32 samples per loop
       uint32_t data = multicore_fifo_pop_blocking();
       
       // Unpack fix15 from uint32_t and convert to float on Core 0
@@ -94,9 +98,15 @@ int main() {
       
       // Feed to global screen manager (single sample at a time)
       feedSynthWaveform(&sample, 1);
+      sample_count++;
     }
     
-    updateSynthScreens(); // Handle display updates
+    // 3. Display updates - only every few loops to reduce overhead
+    static int display_counter = 0;
+    if (++display_counter >= 10) {  // Only update display every 10th loop iteration
+      updateSynthScreens();
+      display_counter = 0;
+    }
   }
 
   return 0; // Will never be reached

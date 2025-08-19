@@ -2,6 +2,7 @@
 
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include "hardware/dma.h"
 #include <string>
 
 class OledDisplay {
@@ -15,6 +16,8 @@ public:
     bool init();
     void clear();
     void display();
+    bool displayAsync();  // Non-blocking display update
+    bool isDisplayBusy(); // Check if DMA transfer is in progress
     void writeText(const std::string& text, int16_t x = 0, int16_t y = 0);
     void setPixel(int x, int y, bool on = true);
     void drawLine(int x0, int y0, int x1, int y1, bool on = true);
@@ -30,7 +33,10 @@ private:
     uint scl_pin_;
     uint8_t i2c_addr_;
     uint8_t buffer_[BUFFER_SIZE];
+    uint8_t dma_buffer_[BUFFER_SIZE + 1]; // DMA buffer with command byte
     bool initialized_;
+    int dma_chan_;        // DMA channel for I2C transfers
+    bool display_busy_;   // Track DMA transfer state
     
     void sendCommand(uint8_t cmd);
     void sendBuffer();

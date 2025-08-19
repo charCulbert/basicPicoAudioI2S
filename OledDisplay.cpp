@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cctype>
 #include <algorithm>
+#include "hardware/dma.h"
 
 #define SSD1306_SET_MEM_MODE        0x20
 #define SSD1306_SET_COL_ADDR        0x21
@@ -31,8 +32,10 @@
 #define SSD1306_NUM_PAGES           (SCREEN_HEIGHT / 8)
 
 OledDisplay::OledDisplay(uint sda_pin, uint scl_pin, uint8_t i2c_addr)
-    : sda_pin_(sda_pin), scl_pin_(scl_pin), i2c_addr_(i2c_addr), initialized_(false) {
+    : sda_pin_(sda_pin), scl_pin_(scl_pin), i2c_addr_(i2c_addr), initialized_(false), 
+      dma_chan_(-1), display_busy_(false) {
     memset(buffer_, 0, BUFFER_SIZE);
+    memset(dma_buffer_, 0, BUFFER_SIZE + 1);
 }
 
 bool OledDisplay::init() {
@@ -77,6 +80,9 @@ bool OledDisplay::init() {
         sendCommand(cmd);
     }
     
+    // Initialize DMA channel for non-blocking I2C transfers
+    dma_chan_ = dma_claim_unused_channel(true);
+    
     initialized_ = true;
     clear();
     display();
@@ -101,6 +107,55 @@ void OledDisplay::display() {
     }
     
     sendBuffer();
+}
+
+bool OledDisplay::displayAsync() {
+    if (!initialized_ || display_busy_) return false;
+    
+    // Set up display area commands (blocking - very fast)
+    uint8_t cmds[] = {
+        SSD1306_SET_COL_ADDR, 0, SCREEN_WIDTH - 1,
+        SSD1306_SET_PAGE_ADDR, 0, SSD1306_NUM_PAGES - 1
+    };
+    
+    for (uint8_t cmd : cmds) {
+        sendCommand(cmd);
+    }
+    
+    // Prepare DMA buffer with data command prefix
+    dma_buffer_[0] = 0x40; // Data command
+    memcpy(dma_buffer_ + 1, buffer_, BUFFER_SIZE);
+    
+    // Configure DMA channel for I2C transfer
+    dma_channel_config config = dma_channel_get_default_config(dma_chan_);
+    channel_config_set_transfer_data_size(&config, DMA_SIZE_8);
+    channel_config_set_dreq(&config, i2c_get_dreq(i2c0, true)); // I2C TX DREQ
+    channel_config_set_read_increment(&config, true);
+    channel_config_set_write_increment(&config, false);
+    
+    // Start DMA transfer (non-blocking)
+    dma_channel_configure(
+        dma_chan_,
+        &config,
+        &i2c0->hw->data_cmd, // Write to I2C data register
+        dma_buffer_,
+        BUFFER_SIZE + 1,
+        true // Start immediately
+    );
+    
+    display_busy_ = true;
+    return true;
+}
+
+bool OledDisplay::isDisplayBusy() {
+    if (!display_busy_) return false;
+    
+    // Check if DMA transfer is complete
+    if (!dma_channel_is_busy(dma_chan_)) {
+        display_busy_ = false;
+    }
+    
+    return display_busy_;
 }
 
 void OledDisplay::writeText(const std::string& text, int16_t x, int16_t y) {
@@ -210,6 +265,7 @@ void OledDisplay::sendCommand(uint8_t cmd) {
 }
 
 void OledDisplay::sendBuffer() {
+    // Fallback to blocking transfer for compatibility
     uint8_t temp_buf[BUFFER_SIZE + 1];
     temp_buf[0] = 0x40;
     memcpy(temp_buf + 1, buffer_, BUFFER_SIZE);

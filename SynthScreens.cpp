@@ -37,6 +37,15 @@ void SynthScreenManager::showParameter(const std::string& name, float value) {
     pending_param_value_ = value;
     has_pending_update_ = true;
     
+    // Minimize screen switching overhead - only check occasionally
+    static uint32_t last_screen_check = 0;
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    
+    if ((now - last_screen_check) < 50) {
+        // Skip screen logic for rapid changes (< 50ms apart)
+        return;
+    }
+    last_screen_check = now;
     
     // Detect which screen this parameter belongs to
     SynthScreen target_screen = detectScreenFromParameter(name);
@@ -48,10 +57,8 @@ void SynthScreenManager::showParameter(const std::string& name, float value) {
         has_pending_update_ = true;
     } else if (target_screen != SynthScreen::PARAM_ONLY) {
         // If already on correct screen, just refresh the timeout
-        screen_switch_time_ = to_ms_since_boot(get_absolute_time());
+        screen_switch_time_ = now;
     }
-    
-    // Display updates handled by update() method - no duplicate drawing here
 }
 
 void SynthScreenManager::update() {
@@ -395,7 +402,10 @@ void SynthScreenManager::drawFader(int x, int y, int w, int h, float level, cons
 }
 
 void SynthScreenManager::updateDisplay() {
-    display_->display();
+    // Try non-blocking display update first, fallback to blocking if DMA unavailable
+    if (!display_->displayAsync()) {
+        display_->display(); // Fallback to blocking
+    }
 }
 
 // Global interface

@@ -77,7 +77,7 @@ public:
     void setValue(float newValue) {
         newValue = std::max(minimum, std::min(newValue, maximum));
         value.store(newValue, std::memory_order_relaxed);
-        showSynthParameter(this->parameterID, this->getNormalizedValue());
+        // Screen update moved to setNormalizedValue() to avoid duplicate calls
     }
 
     /**
@@ -107,7 +107,15 @@ public:
     void setNormalizedValue(float norm) {
         norm = std::max(0.0f, std::min(norm, 1.0f));
         setValue(minimum + norm * (maximum - minimum));
-        showSynthParameter(this->parameterID, this->getNormalizedValue());
+        
+        // Skip screen updates during rapid parameter changes for better responsiveness
+        static uint32_t last_screen_update = 0;
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        
+        if ((now - last_screen_update) > 100) {  // Only update screen every 100ms max
+            showSynthParameter(this->parameterID, this->getNormalizedValue());
+            last_screen_update = now;
+        }
     }
 
     // === Accessors for Parameter Metadata ===
