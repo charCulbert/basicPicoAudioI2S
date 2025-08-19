@@ -2,6 +2,7 @@
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 #include <cstdint>
+#include <string>
 // --- Core Application Headers ---
 #include "AudioEngine.h"
 #include "I2sAudioOutput.h"
@@ -68,9 +69,19 @@ int main() {
   printf("LOG: System clock is running at %lu kHz\n",
          clock_get_hz(clk_sys) / 1000);
   
-  // Initialize OLED display with welcome message
-  writeToOled("PICO SYNTH\nREADY");
-  sleep_ms(2000);
+  // Initialize OLED display with loading animation
+  writeToOled("PICO SYNTH");
+  sleep_ms(500);
+  
+  // Simple loading animation
+  for (int i = 0; i < 6; i++) {
+    std::string dots(i + 1, '.');
+    writeToOled("PICO SYNTH\nLOADING" + dots);
+    sleep_ms(200);
+  }
+  
+  writeToOled("PICO SYNTH\nREADY!");
+  sleep_ms(500);
   
   // Launch the audio engine on the second core
   multicore_launch_core1(main_core1);
@@ -78,7 +89,8 @@ int main() {
   // Create the listeners that will run on this core
   MidiSerialListener midi_listener;
   
-  // Note: Screen manager is created automatically when first parameter is changed
+  // Switch to waveform display after startup
+  switchSynthScreen(SynthScreen::WAVEFORM);
 
   // The main control loop for Core 0 - MIDI gets absolute priority
   while (true) {

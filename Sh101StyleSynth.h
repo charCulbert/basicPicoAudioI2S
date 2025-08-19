@@ -422,20 +422,51 @@ private:
         
         // Update parameters from parameter store
         
-        // Update envelope parameters for all voices
+        // Update envelope parameters selectively to avoid interference with active notes
         if (p_attack && p_decay && p_sustain && p_release) {
             float attackValue = p_attack->getValue();
             float decayValue = p_decay->getValue();
             float sustainValue = p_sustain->getValue();
             float releaseValue = p_release->getValue();
             
-            // Update all voice envelopes - classic analog synth behavior with smoothing
+            // Cache parameter values to detect changes
+            static float last_attack = -1.0f, last_decay = -1.0f, last_sustain = -1.0f, last_release = -1.0f;
+            
+            bool attack_changed = (attackValue != last_attack);
+            bool decay_changed = (decayValue != last_decay);
+            bool sustain_changed = (sustainValue != last_sustain);
+            bool release_changed = (releaseValue != last_release);
+            
+            // Update parameters based on voice state and what changed
             for (auto& voice : voices) {
-                voice.envelope.setAttackTime(attackValue);
-                voice.envelope.setDecayTime(decayValue);
-                voice.envelope.setSustainLevel(sustainValue);
-                voice.envelope.setReleaseTime(releaseValue);
+                auto state = voice.envelope.getState();
+                
+                // Attack/Decay: Only update idle voices (avoids interference with active envelopes)
+                if (state == Fix15VCAEnvelopeModule::State::Idle) {
+                    if (attack_changed) voice.envelope.setAttackTime(attackValue);
+                    if (decay_changed) voice.envelope.setDecayTime(decayValue);
+                }
+                
+                // Sustain/Release: Always update for classic analog synth behavior
+                if (sustain_changed) voice.envelope.setSustainLevel(sustainValue);
+                if (release_changed) voice.envelope.setReleaseTime(releaseValue);
             }
+            
+            // Cache the values
+            if (attack_changed) last_attack = attackValue;
+            if (decay_changed) last_decay = decayValue;
+            if (sustain_changed) last_sustain = sustainValue;
+            if (release_changed) last_release = releaseValue;
+        }
+    }
+    
+    // Helper to update a voice with current envelope parameters (for new notes)
+    void updateVoiceEnvelopeParams(Voice& voice) {
+        if (p_attack && p_decay && p_sustain && p_release) {
+            voice.envelope.setAttackTime(p_attack->getValue());
+            voice.envelope.setDecayTime(p_decay->getValue());
+            voice.envelope.setSustainLevel(p_sustain->getValue());
+            voice.envelope.setReleaseTime(p_release->getValue());
         }
     }
     
@@ -443,6 +474,7 @@ private:
         // 1. FIRST: Check if this note is already playing OR still sounding - steal it immediately
         for (auto& voice : voices) {
             if (voice.midiNote == note && (voice.isActive || voice.envelope.isActive())) {
+                updateVoiceEnvelopeParams(voice);  // Update envelope params for retriggered note
                 voice.noteOn(note, velocity, sampleRate); // Retrigger the same note
                 return; // Don't allow duplicate notes, even if in release phase
             }
@@ -451,6 +483,7 @@ private:
         // 2. Find the first completely idle voice
         for (auto& voice : voices) {
             if (!voice.envelope.isActive()) {
+                updateVoiceEnvelopeParams(voice);  // Update envelope params for new note
                 voice.noteOn(note, velocity, sampleRate);
                 return; // Found a free voice, we're done
             }
@@ -459,6 +492,7 @@ private:
         // 3. If no idle voices, look for voices in release phase (prefer stealing these)
         for (auto& voice : voices) {
             if (voice.envelope.getState() == Fix15VCAEnvelopeModule::State::Release) {
+                updateVoiceEnvelopeParams(voice);  // Update envelope params for stolen voice
                 voice.noteOn(note, velocity, sampleRate);
                 return; // Found a releasing voice to reuse
             }
@@ -477,6 +511,7 @@ private:
                 }
             }
         }
+        updateVoiceEnvelopeParams(voices[oldest_voice]);  // Update envelope params for stolen voice
         voices[oldest_voice].noteOn(note, velocity, sampleRate);
     }
     
