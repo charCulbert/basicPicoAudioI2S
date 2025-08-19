@@ -180,6 +180,8 @@ private:
         // 2. Ask the AudioEngine to process its modules and fill our workspace.
         audioEngine.processNextBlock(float_workspace_view);
 
+        // Audio capture moved to Sh101StyleSynth to get pre-master-volume signal
+
         // 3. Convert the float buffer to the uint32_t hardware buffer.
         uint32_t* hardware_buffer = audio_buffers[dma_buffer_to_fill_idx];
 

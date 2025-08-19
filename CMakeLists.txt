@@ -11,6 +11,8 @@ pico_sdk_init()
 
 add_executable(PicoSynth
         main.cpp
+        OledDisplay.cpp
+        SynthScreens.cpp
 )
 
 pico_generate_pio_header(PicoSynth ${CMAKE_CURRENT_LIST_DIR}/audio_i2s.pio)
@@ -28,6 +30,7 @@ target_link_libraries(PicoSynth PRIVATE
         hardware_pwm
         hardware_pio
         hardware_interp
+		hardware_i2c
 )
 
 target_compile_features(PicoSynth PRIVATE cxx_std_17)

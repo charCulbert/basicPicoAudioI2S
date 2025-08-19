@@ -37,3 +37,6 @@ pico-extras/
 # Backup files
 *~
 AGENTS.md
+
+
+.cache/

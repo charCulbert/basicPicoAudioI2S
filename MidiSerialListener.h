@@ -44,7 +44,15 @@ enum MidiCommandType { NOTE_OFF_CMD = 0x80, NOTE_ON_CMD = 0x90, ALL_NOTES_OFF_CM
  */
 class MidiSerialListener {
 public:
-    MidiSerialListener() : ascii_pos(0) {}
+    MidiSerialListener() : ascii_pos(0), last_midi_activity_(0) {}
+    
+    /**
+     * Check if MIDI activity occurred recently (for prioritization)
+     */
+    bool hasRecentActivity(uint32_t threshold_ms = 50) {
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        return (now - last_midi_activity_) < threshold_ms;
+    }
     
     /**
      * Process incoming serial data (call from main control loop)
@@ -64,6 +72,7 @@ public:
         if (c & 0x80) {
             int data1 = getchar(); int data2 = getchar();
             if (data1 != PICO_ERROR_TIMEOUT && data2 != PICO_ERROR_TIMEOUT) {
+                last_midi_activity_ = to_ms_since_boot(get_absolute_time());
                 handleMidiMessage(c, data1, data2);
             }
         } else {
@@ -74,6 +83,7 @@ public:
                     ascii_pos = 0;
                 }
             } else if (ascii_pos < sizeof(ascii_buffer) - 1) {
+                last_midi_activity_ = to_ms_since_boot(get_absolute_time());
                 ascii_buffer[ascii_pos++] = c;
             }
         }
@@ -93,11 +103,13 @@ private:
                 return;
             }
             
+            
+            // Process all CC changes - even single value changes are important
+            
             for (auto* p : g_synth_parameters) {
                 if (p->getCcNumber() == data1) {
                     p->setNormalizedValue(data2 / 127.0f);
-                    printf("STATE:%d:%.3f\n", p->getCcNumber(), p->getNormalizedValue());
-                    fflush(stdout);
+                    // STATE feedback removed - was causing lag and feedback loops
                     break;
                 }
             }
@@ -134,4 +146,5 @@ private:
 
     char ascii_buffer[64];
     int ascii_pos;
+    uint32_t last_midi_activity_;
 };
