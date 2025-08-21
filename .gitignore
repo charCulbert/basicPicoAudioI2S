@@ -40,3 +40,5 @@ AGENTS.md
 
 
 .cache/
+.claude/
+CLAUDE.md
